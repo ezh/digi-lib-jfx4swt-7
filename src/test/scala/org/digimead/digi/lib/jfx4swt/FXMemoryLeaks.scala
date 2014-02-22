@@ -20,7 +20,7 @@
 
 package org.digimead.digi.lib.jfx4swt
 
-import java.util.concurrent.CountDownLatch
+import java.util.concurrent.{ CountDownLatch, Executors }
 import javafx.animation.FadeTransitionBuilder
 import javafx.collections.FXCollections
 import javafx.scene.{ Group, Scene }
@@ -33,6 +33,7 @@ import org.eclipse.swt.events.{ DisposeEvent, DisposeListener, PaintEvent }
 import org.eclipse.swt.layout.FillLayout
 import org.eclipse.swt.widgets.{ Display, Shell }
 import org.scalatest.{ FreeSpec, Matchers }
+import scala.concurrent.{ Await, ExecutionContext, Future }
 
 class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
   lazy val config = org.digimead.digi.lib.default
@@ -60,11 +61,26 @@ class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
       showAndWait
       println(s"Iteration ${i} memory usage: " + convertToMeg(getMemUsage()))
     }
-    Thread.sleep(100000)
+    //Thread.sleep(100000)
+  }
+  "Stress test" in {
+    showAndWait
+    val initialMem = convertToMeg(getMemUsage())
+    println("Initial memory usage: " + initialMem)
+    implicit val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(10))
+    for (i ← 0 until 10) {
+      val futures = for (i ← 0 until 10)
+        yield Future {
+        println("Show " + i)
+        showAndWait
+      }
+      Await.result(Future.sequence(futures), scala.concurrent.duration.Duration("10 sec"))
+      println(s"Iteration ${i} memory usage: " + convertToMeg(getMemUsage()))
+    }
+    //Thread.sleep(100000)
   }
 
   def showAndWait = {
-    println("Show shell")
     val latch = new CountDownLatch(1)
     Display.getDefault().asyncExec {
       new Runnable {
@@ -83,6 +99,7 @@ class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
               }
             }
           }
+          println("Show shell with " + canvas.hashCode())
           val adapter = JFX.exec {
             val chart = createChart()
             chart.setAnimated(true)
@@ -95,7 +112,10 @@ class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
               .cycleCount(-1)
               .build()
             val scene = new Scene(chart)
-            canvas.setScene(scene, _ ⇒ fadeTransition.play())
+            canvas.setScene(scene, { stage ⇒
+              println(stage + " ready for " + canvas.hashCode())
+              fadeTransition.play()
+            })
             canvas.addDisposeListener { stage ⇒
               fadeTransition.stop()
               scene.rootProperty().setValue(new Group)

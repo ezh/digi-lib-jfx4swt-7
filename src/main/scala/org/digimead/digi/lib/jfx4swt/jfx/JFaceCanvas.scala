@@ -66,8 +66,6 @@ class JFaceCanvas(host: WeakReference[FXHost]) extends javafx.stage.Window {
     @deprecated("", "") def hide_warning_for_impl_peer_set(arg: TKStage) = impl_peer = arg
     val embeddedStage = hide_warning_for_impl_peer_get
     hide()
-    try onDispose(this)
-    catch { case e: Throwable ⇒ JFaceCanvas.log.error("onDispose callback failed." + e.getMessage(), e) }
     if (embeddedStage != null) {
       embeddedStage.setVisible(false)
       embeddedStage.setScene(null)
@@ -75,7 +73,10 @@ class JFaceCanvas(host: WeakReference[FXHost]) extends javafx.stage.Window {
     }
     host.get.foreach(_.dispose())
     hide_warning_for_impl_peer_set(null)
-    Disposable.clean(this)
+    JFX.execAsync {
+      try onDispose(this)
+      catch { case e: Throwable ⇒ JFaceCanvas.log.error("onDispose callback failed." + e.getMessage(), e) }
+    }
   }
   /** Execute open sequence within Java FX thread. */
   protected def openExec(scene: Scene, onReady: JFaceCanvas ⇒ _) = {
@@ -87,10 +88,12 @@ class JFaceCanvas(host: WeakReference[FXHost]) extends javafx.stage.Window {
     } else {
       setScene(scene)
     }
-    // Some times embedded content freeze at the beginning.
-    JFX.execAsync { host.get.foreach(_.embeddedScene.foreach { _.entireSceneNeedsRepaint() }) }
-    try onReady(this)
-    catch { case e: Throwable ⇒ JFaceCanvas.log.error("onReady callback failed." + e.getMessage(), e) }
+    JFX.execAsync {
+      // Some times embedded content freeze at the beginning.
+      host.get.foreach(_.embeddedScene.foreach { _.entireSceneNeedsRepaint() })
+      try onReady(this)
+      catch { case e: Throwable ⇒ JFaceCanvas.log.error("onReady callback failed." + e.getMessage(), e) }
+    }
   }
 }
 

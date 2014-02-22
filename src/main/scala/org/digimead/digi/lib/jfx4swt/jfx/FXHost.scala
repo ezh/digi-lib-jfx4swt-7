@@ -90,7 +90,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
   def repaint(): Unit = for {
     adapter ← adapter.get
   } {
-    if (rawPixelsBuf == null || disposed)
+    if (rawPixelsBuf == null || scene == null || disposed)
       return
     // 1. We want empty frame to draw.
     repaintLastToDraw = adapter.frameEmpty.getAndSet(null)

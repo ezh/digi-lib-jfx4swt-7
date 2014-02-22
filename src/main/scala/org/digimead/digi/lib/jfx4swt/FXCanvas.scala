@@ -20,14 +20,16 @@
 
 package org.digimead.digi.lib.jfx4swt
 
-import com.sun.javafx.stage.EmbeddedWindow
-import java.util.concurrent.{ CountDownLatch, Exchanger, TimeUnit }
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import java.util.concurrent.{ Exchanger, TimeUnit }
 import javafx.scene.Scene
-import org.digimead.digi.lib.jfx4swt.JFX.JFX2interface
+import org.digimead.digi.lib.jfx4swt.jfx.{ FXAdapter, FXHost, JFaceCanvas }
 import org.eclipse.swt.SWT
 import org.eclipse.swt.events.{ ControlAdapter, ControlEvent, DisposeEvent, DisposeListener, PaintEvent, PaintListener }
 import org.eclipse.swt.graphics.{ GC, Image, ImageData, Point, Rectangle }
 import org.eclipse.swt.widgets.{ Canvas, Composite }
+import scala.collection.mutable
+import scala.ref.WeakReference
 
 /**
  * FXCanvas embedded widget.
@@ -36,13 +38,29 @@ import org.eclipse.swt.widgets.{ Canvas, Composite }
  */
 class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
   /** Adapter between JavaFX EmbeddedWindow and SWT FXCanvas. */
-  lazy val adapter = new Adapter
-  lazy val host = new FXHost(adapter)
-  lazy val stage = new EmbeddedWindow(host)
-  protected var preferredHeight = 0
-  protected var preferredWidth = 0
+  @volatile protected var adapterInstance = createAdapter
+  @volatile protected var hostInstance = createHost(adapterInstance)
+  @volatile protected var stageInstance = createJFaceCanvas(hostInstance)
+  @volatile protected var preferredHeight = 0
+  @volatile protected var preferredWidth = 0
+  /** List of dispose listeners for JFaceCanvas. */
+  protected val disposeListeners = new mutable.ArrayBuffer[JFaceCanvas ⇒ _]() with mutable.SynchronizedBuffer[JFaceCanvas ⇒ _]
 
   initialize
+
+  /** Get adapter. */
+  def adapter = Option(adapterInstance)
+  /**
+   * Adds the listener to the collection of listeners who will
+   * be notified when the widget is disposed. When the widget is
+   * disposed, the listener is notified by sending it the
+   * <code>widgetDisposed()</code> message within Java FX event thread.
+   *
+   * @param listener the listener which should be notified when the receiver is disposed
+   *
+   */
+  def addDisposeListener[T](onDispose: JFaceCanvas ⇒ T) = disposeListeners.append(onDispose)
+  /** Returns the preferred size of the receiver. */
   override def computeSize(wHint: Int, hHint: Int, changed: Boolean) =
     if (wHint == SWT.DEFAULT && hHint == SWT.DEFAULT)
       new Point(preferredWidth, preferredHeight)
@@ -55,41 +73,51 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
       else
         size
     }
+  /** Get host. */
+  def host = Option(hostInstance)
+  /** Set scene to stage. */
+  def setScene[T](scene: Scene, onReady: JFaceCanvas ⇒ T = FXCanvas.nopCallback) =
+    JFX.exec { stage.foreach(_.open(scene, onReady)) }
+  /** Get stage. */
+  def stage = Option(stageInstance)
 
-  def initialize() {
+  /** Create adapter. */
+  protected def createAdapter() = new Adapter
+  /** Create embedded. */
+  protected def createJFaceCanvas(host: FXHost) = new JFaceCanvas(WeakReference(host))
+  /** Create host. */
+  protected def createHost(adapter: Adapter) = new FXHost(WeakReference(adapter))
+  /** Initialize FXCanvas widget */
+  protected def initialize() {
     checkWidget()
-    addPaintListener(adapter)
-    addControlListener(adapter)
+    addPaintListener(adapterInstance)
+    addControlListener(adapterInstance)
     addDisposeListener(new DisposeListener {
       def widgetDisposed(e: DisposeEvent) {
         val canvas = e.widget.asInstanceOf[FXCanvas]
-        JFX.execNGet {
-          canvas.stage.hide()
-          canvas.stage.setScene(null)
-          canvas.host.dispose()
-        }
-        removePaintListener(canvas.adapter)
-        addControlListener(canvas.adapter)
-        canvas.adapter.dispose()
+        removePaintListener(canvas.adapterInstance)
+        removeControlListener(canvas.adapterInstance)
+        val disposeListeners = FXCanvas.this.disposeListeners.toIndexedSeq
+        FXCanvas.this.disposeListeners.clear()
+        stageInstance.close((stage: JFaceCanvas) ⇒ disposeListeners.foreach(_(stage)))
+        canvas.adapterInstance = null
+        canvas.hostInstance = null
+        canvas.stageInstance = null
       }
     })
-  }
-  protected def setPreferredSize(x: Int, y: Int) {
-    preferredWidth = x
-    preferredHeight = y
   }
 
   class Adapter extends ControlAdapter with FXAdapter with PaintListener {
     private[this] final val paletteData = JFX.paletteData
     private[this] final var imageDataFrameOne = new ImageData(1, 1, 32, paletteData, 4, new Array[Byte](4))
     private[this] final var imageDataFrameTwo = new ImageData(1, 1, 32, paletteData, 4, new Array[Byte](4))
-    private[this] final var preferredHeight = 0
-    private[this] final var preferredWidth = 0
     private[this] final var paintControlToDraw: Array[Byte] = null
     private[this] final var paintControlImageData: ImageData = null
+    private[this] final var paintControlOffscreenBounds: Rectangle = null
     private[this] final var paintControlOffscreenImage: Image = null
     private[this] final var paintControlGCOffscreenImage: GC = null
-    private[this] final var paintControlBounds: Rectangle = null
+    private[this] final var display = parent.getDisplay()
+    private[this] final val disposeRWL = new ReentrantReadWriteLock()
 
     /**
      * Sent when the size (width, height) of a control changes.
@@ -99,113 +127,144 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
      */
     override def controlResized(e: ControlEvent) {
       val rect = FXCanvas.this.getClientArea()
-      JFX.exec { host.setPreferredSize(rect.width, rect.height) }
+      JFX.exec { hostInstance.setPreferredSize(rect.width, rect.height) }
     }
     /**
      * Dispose adapter.
      */
     override def dispose() {
-      super.dispose()
-      if (paintControlOffscreenImage != null)
-        paintControlOffscreenImage.dispose()
-      if (paintControlGCOffscreenImage != null)
-        paintControlGCOffscreenImage.dispose()
-      imageDataFrameOne = null
-      imageDataFrameTwo = null
-      preferredHeight = 0
-      preferredWidth = 0
-      paintControlToDraw = null
-      paintControlImageData = null
-      paintControlOffscreenImage = null
-      paintControlGCOffscreenImage = null
-      paintControlBounds = null
+      disposeRWL.writeLock().lock()
+      try {
+        super.dispose()
+        if (display != null)
+          if (display.getThread() == Thread.currentThread()) {
+            if (paintControlOffscreenImage != null)
+              paintControlOffscreenImage.dispose()
+            if (paintControlGCOffscreenImage != null)
+              paintControlGCOffscreenImage.dispose()
+            display = null
+          } else
+            display.asyncExec(new Runnable { def run = Adapter.this.dispose() })
+        imageDataFrameOne = null
+        imageDataFrameTwo = null
+        paintControlToDraw = null
+        paintControlImageData = null
+        paintControlOffscreenImage = null
+        paintControlGCOffscreenImage = null
+        paintControlOffscreenBounds = null
+      } finally disposeRWL.writeLock() unlock ()
     }
     /**
      * Sent when a paint event occurs for the control.
      *
      * @param e an event containing information about the paint
      */
-    // In is about 60ms at 1900x1200 GTK Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz :-( ~15 FPS
+    // In is about 60ms at 1900x1200 :-( ~15 FPS
+    // Linux devbox 3.10.0-gentoo #1 SMP PREEMPT Sat Jul 6 19:42:57 MSK 2013 x86_64 Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz GenuineIntel GNU/Linux
     // GTK Cairo is too slow
     // Pure JavaFX with Java2D thread provides ~30 FPS at the same time. (every 2nd frame dropped)
     // I saw no workaround for this except GLCanvas, but OpenGL is out of scope
     override def paintControl(event: PaintEvent) {
       paintControlToDraw = frameFull.getAndSet(null)
+      // Prepare offscreen image.
+      if (paintControlOffscreenImage == null ||
+        paintControlOffscreenBounds.width != event.width ||
+        paintControlOffscreenBounds.height != event.height) {
+        if (paintControlOffscreenImage != null)
+          paintControlOffscreenImage.dispose()
+        if (paintControlGCOffscreenImage != null)
+          paintControlGCOffscreenImage.dispose()
+        // Create the image to fill the canvas.
+        paintControlOffscreenImage = new Image(event.display, new Rectangle(event.x, event.y, event.width, event.height))
+        // Set up the offscreen gc.
+        paintControlGCOffscreenImage = new GC(paintControlOffscreenImage)
+        // Set offscreen bounds
+        paintControlOffscreenBounds = paintControlOffscreenImage.getBounds()
+      }
       if (paintControlToDraw != null) {
         paintControlImageData = if (frameOne.get() == paintControlToDraw) {
           frameEmpty.set(frameTwo.get())
-          if (imageDataFrameTwo.data != paintControlToDraw)
-            imageDataFrameTwo = new ImageData(preferredWidth, preferredHeight, 32, paletteData, 4, paintControlToDraw)
-          imageDataFrameTwo
+          if ((event.width * event.height * 4) != paintControlToDraw.length) {
+            null
+          } else {
+            if (imageDataFrameTwo.data != paintControlToDraw)
+              imageDataFrameTwo = new ImageData(event.width, event.height, 32, paletteData, 4, paintControlToDraw)
+            imageDataFrameTwo
+          }
         } else {
           frameEmpty.set(frameOne.get())
-          if (imageDataFrameOne.data != paintControlToDraw)
-            imageDataFrameOne = new ImageData(preferredWidth, preferredHeight, 32, paletteData, 4, paintControlToDraw)
-          imageDataFrameOne
+          if ((event.width * event.height * 4) != paintControlToDraw.length) {
+            null
+          } else {
+            if (imageDataFrameOne.data != paintControlToDraw)
+              imageDataFrameOne = new ImageData(event.width, event.height, 32, paletteData, 4, paintControlToDraw)
+            imageDataFrameOne
+          }
         }
-        // Prepare offscreen image.
-        paintControlBounds = getBounds()
-        if (paintControlOffscreenImage == null || paintControlOffscreenImage.getBounds() != paintControlBounds) {
-          if (paintControlOffscreenImage != null)
-            paintControlOffscreenImage.dispose()
-          if (paintControlGCOffscreenImage != null)
-            paintControlGCOffscreenImage.dispose()
-          // Create the image to fill the canvas.
-          paintControlOffscreenImage = new Image(event.display, getBounds())
-          // Set up the offscreen gc.
-          paintControlGCOffscreenImage = new GC(paintControlOffscreenImage)
-        }
-
         // Obtain the next frame.
-        val imageFrame = new Image(event.display, paintControlImageData)
         // Draw the image offscreen.
         paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
-        paintControlGCOffscreenImage.drawImage(imageFrame, 0, 0)
+        if (paintControlImageData != null && isVisible()) {
+          /*
+           * ---> HERE <---
+           * most CPU and memory hungry
+           */
+          val imageFrame = new Image(event.display, paintControlImageData)
+          // Draw the image offscreen.
+          paintControlGCOffscreenImage.drawImage(imageFrame, 0, 0)
+          // Draw the offscreen buffer to the screen.
+          event.gc.drawImage(paintControlOffscreenImage, 0, 0)
+          imageFrame.dispose()
+        }
+      } else {
+        // This is a thread safe call.
+        hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
+        // Draw the image offscreen.
+        paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
         // Draw the offscreen buffer to the screen.
         event.gc.drawImage(paintControlOffscreenImage, 0, 0)
-        imageFrame.dispose()
       }
     }
-    def setPreferredSize(x: Int, y: Int) = if (!parent.isDisposed()) {
-      val execLatch = new CountDownLatch(1)
-      parent.getDisplay().asyncExec(new Runnable {
-        def run {
-          if (!FXCanvas.this.isDisposed()) {
-            preferredWidth = x
-            preferredHeight = y
-            FXCanvas.this.setPreferredSize(x, y)
+    def setPreferredSize(x: Int, y: Int) = {
+      disposeRWL.readLock().lock()
+      try if (display != null) {
+        FXCanvas.this.preferredWidth = x
+        FXCanvas.this.preferredHeight = y
+      } finally disposeRWL.readLock().unlock()
+    }
+    def redraw() {
+      disposeRWL.readLock().lock()
+      try if (display != null) display.asyncExec(new Runnable {
+        def run = if (!FXCanvas.this.isDisposed()) FXCanvas.this.redraw()
+      }) finally disposeRWL.readLock().unlock()
+    }
+    def requestFocus(): Boolean = {
+      disposeRWL.readLock().lock()
+      try if (display == null) {
+        false
+      } else {
+        val exchanger = new Exchanger[Boolean]()
+        display.asyncExec(new Runnable {
+          def run {
+            if (!FXCanvas.this.isDisposed())
+              exchanger.exchange(FXCanvas.this.setFocus(), 100, TimeUnit.MILLISECONDS)
+            else
+              exchanger.exchange(false, 100, TimeUnit.MILLISECONDS)
           }
-          execLatch.countDown()
-        }
-      })
-      execLatch.await(JFX.timeout, TimeUnit.MILLISECONDS)
+        })
+        exchanger.exchange(false, JFX.timeout, TimeUnit.MILLISECONDS)
+      } finally disposeRWL.readLock().unlock()
     }
-    def redraw() = if (!parent.isDisposed())
-      parent.getDisplay().asyncExec(new Runnable {
-        def run {
-          if (!FXCanvas.this.isDisposed())
-            FXCanvas.this.redraw()
-        }
-      })
-    def requestFocus(): Boolean = if (parent.isDisposed()) false else {
-      val exchanger = new Exchanger[Boolean]()
-      parent.getDisplay().asyncExec(new Runnable {
-        def run {
-          if (!FXCanvas.this.isDisposed())
-            exchanger.exchange(FXCanvas.this.setFocus(), 100, TimeUnit.MILLISECONDS)
-          else
-            exchanger.exchange(false, 100, TimeUnit.MILLISECONDS)
-        }
-      })
-      exchanger.exchange(false, JFX.timeout, TimeUnit.MILLISECONDS)
+    def setEnabled(enabled: Boolean) {
+      disposeRWL.readLock().lock()
+      try if (display != null) display.asyncExec(new Runnable {
+        def run = if (!FXCanvas.this.isDisposed()) FXCanvas.this.setEnabled(enabled)
+      }) finally disposeRWL.readLock().unlock()
     }
-    def setEnabled(enabled: Boolean) = if (!parent.isDisposed())
-      parent.getDisplay().asyncExec(new Runnable {
-        def run {
-          if (!FXCanvas.this.isDisposed())
-            FXCanvas.this.setEnabled(enabled)
-        }
-      })
     def traverseFocusOut(forward: Boolean) = false
   }
+}
+
+object FXCanvas {
+  val nopCallback = (canvas: JFaceCanvas) ⇒ {}
 }

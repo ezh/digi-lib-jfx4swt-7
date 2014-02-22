@@ -59,6 +59,6 @@ class Window(owner: JFXWindow, screen: Screen, mask: Int) extends JFXWindow(owne
 }
 
 object Window {
-  // There are only 4^64 - 1 windows. Please restart this software before the limit will be reached. ;-)
+  // There are only 2^64 - 1 windows. Please restart this software before the limit will be reached. ;-)
   protected var instanceCounter = Long.MinValue
 }

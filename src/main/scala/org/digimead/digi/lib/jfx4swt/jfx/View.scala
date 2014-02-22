@@ -54,6 +54,6 @@ class View(pen: Pen) extends JFXView(pen) {
 }
 
 object View {
-  // There are only 4^64 - 1 views. Please restart this software before the limit will be reached. ;-)
+  // There are only 2^64 - 1 views. Please restart this software before the limit will be reached. ;-)
   protected var instanceCounter = Long.MinValue
 }

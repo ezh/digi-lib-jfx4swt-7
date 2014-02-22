@@ -23,11 +23,13 @@ package org.digimead.digi.lib.jfx4swt
 import com.sun.glass.ui
 import com.sun.glass.ui.{ Cursor, Launchable, Pen, Pixels, Screen, Size, View, Window }
 import com.sun.glass.ui.CommonDialogs.ExtensionFilter
+import java.lang.ref.WeakReference
 import java.lang.reflect.InvocationTargetException
 import java.nio.{ ByteBuffer, IntBuffer }
+import java.util.TimerTask
 import java.util.concurrent.{ CountDownLatch, Exchanger, TimeUnit }
+import java.util.concurrent.atomic.AtomicReference
 import org.digimead.digi.lib.api.DependencyInjection
-import org.digimead.digi.lib.jfx4swt.JFX.JFX2interface
 import org.eclipse.swt.graphics.Point
 import org.eclipse.swt.widgets.Display
 import scala.language.implicitConversions
@@ -151,18 +153,28 @@ object JFXApplication {
     }
   }
   class Timer(runnable: Runnable) extends ui.Timer(runnable) {
-    private var task: java.util.TimerTask = null
+    private val task = new AtomicReference[java.util.TimerTask]()
 
     protected def _start(runnable: Runnable, period: Int) = {
-      task = new java.util.TimerTask() { def run() = runnable.run() }
-      timer.schedule(task, 0, period)
+      val newTask = new Task(runnable, new WeakReference(this))
+      val previousTask = this.task.getAndSet(newTask)
+      if (previousTask != null)
+        previousTask.cancel()
+      timer.schedule(newTask, 0, period)
       1 // need something non-zero to denote success.
     }
     protected def _start(runnable: Runnable) = throw new RuntimeException("vsync timer not supported");
     protected def _stop(timer: Long) {
-      if (task != null) {
-        task.cancel()
-        task = null
+      val previousTask = this.task.getAndSet(null)
+      if (previousTask != null)
+        previousTask.cancel()
+    }
+    class Task(runnable: Runnable, timer: WeakReference[Timer]) extends TimerTask {
+      def run {
+        runnable.run()
+        val container = timer.get
+        if (container != null)
+          container.task.compareAndSet(this, null)
       }
     }
   }

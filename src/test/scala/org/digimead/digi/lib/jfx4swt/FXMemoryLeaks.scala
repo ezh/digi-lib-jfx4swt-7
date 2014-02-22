@@ -20,22 +20,21 @@
 
 package org.digimead.digi.lib.jfx4swt
 
+import java.util.concurrent.CountDownLatch
 import javafx.animation.FadeTransitionBuilder
 import javafx.collections.FXCollections
-import javafx.scene.Scene
+import javafx.scene.{ Group, Scene }
 import javafx.scene.chart.{ NumberAxis, StackedAreaChart, XYChart }
 import javafx.util.Duration
 import org.digimead.digi.lib.DependencyInjection
-import org.digimead.digi.lib.jfx4swt.JFX.JFX2interface
-import org.digimead.digi.lib.jfx4swt.jfx.FXAdapter
 import org.digimead.lib.test.LoggingHelper
 import org.eclipse.swt.SWT
+import org.eclipse.swt.events.{ DisposeEvent, DisposeListener, PaintEvent }
 import org.eclipse.swt.layout.FillLayout
 import org.eclipse.swt.widgets.{ Display, Shell }
 import org.scalatest.{ FreeSpec, Matchers }
-import scala.collection.mutable
 
-class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
+class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
   lazy val config = org.digimead.digi.lib.default
   val chartSeries = new XYChart.Series[Number, Number]()
   val thread = new Thread {
@@ -53,21 +52,37 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
   var freeMem = 0L
   var usedMem = 0L
 
-  "Animated StackedAreaChart should be fine" in {
-    val buf = new mutable.ArrayBuffer[Long] with mutable.SynchronizedBuffer[Long]
+  "Check for memory leaks" in {
+    showAndWait
+    val initialMem = convertToMeg(getMemUsage())
+    println("Initial memory usage: " + initialMem)
+    for (i ← 0 until 30) {
+      showAndWait
+      println(s"Iteration ${i} memory usage: " + convertToMeg(getMemUsage()))
+    }
+    Thread.sleep(100000)
+  }
+
+  def showAndWait = {
+    println("Show shell")
+    val latch = new CountDownLatch(1)
     Display.getDefault().asyncExec {
       new Runnable {
         def run() = try {
           val shell = new Shell()
+          shell.addDisposeListener(new DisposeListener { def widgetDisposed(e: DisposeEvent) = latch.countDown() })
           shell.setLayout(new FillLayout(SWT.VERTICAL))
-          val canvas = new FXCanvas(shell, SWT.NONE) /* {
-            override lazy val adapter = new Adapter {
+          val canvas = new FXCanvas(shell, SWT.NONE) {
+            override def createAdapter() = new Adapter {
+              var n = 0
               override def paintControl(event: PaintEvent) {
-                buf.append(System.currentTimeMillis())
+                n += 1
                 super.paintControl(event)
+                if (n == 15)
+                  getShell().getDisplay().asyncExec(new Runnable { def run = getShell().close() })
               }
             }
-          }*/
+          }
           val adapter = JFX.exec {
             val chart = createChart()
             chart.setAnimated(true)
@@ -79,9 +94,12 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
               .autoReverse(true)
               .cycleCount(-1)
               .build()
-            fadeTransition.play()
-            val scene = new Scene(chart, 500, 500)
-            canvas.setScene(scene)
+            val scene = new Scene(chart)
+            canvas.setScene(scene, _ ⇒ fadeTransition.play())
+            canvas.addDisposeListener { stage ⇒
+              fadeTransition.stop()
+              scene.rootProperty().setValue(new Group)
+            }
 
             Display.getDefault().asyncExec {
               new Runnable {
@@ -98,90 +116,7 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
         }
       }
     }
-    val t = new Thread {
-      setDaemon(true)
-      override def run {
-        while (true) {
-          totalMem = runtime.totalMemory()
-          freeMem = runtime.freeMemory()
-          usedMem = totalMem - freeMem
-          println(s"USED: ${convertToMeg(usedMem)} FREE ${convertToMeg(freeMem)} TOTAL ${convertToMeg(totalMem)}")
-          Thread.sleep(300)
-        }
-      }
-    }
-    //t.start
-    Thread.sleep(10000)
-    //t.interrupt()
-    System.gc()
-    System.runFinalization()
-    totalMem = runtime.totalMemory()
-    freeMem = runtime.freeMemory()
-    usedMem = totalMem - freeMem
-    println(s"AFTER GC USED: ${convertToMeg(usedMem)} FREE ${convertToMeg(freeMem)} TOTAL ${convertToMeg(totalMem)}")
-    //val len = buf.last.toDouble - buf.head
-    //println(s"Total: ${len / 1000} ${buf.length} frames at ${buf.length / (len / 1000)} fps")
-  }
-
-  "Static StackedAreaChart should be fine" in {
-    val buf = new mutable.ArrayBuffer[Long] with mutable.SynchronizedBuffer[Long]
-    Display.getDefault().asyncExec {
-      new Runnable {
-        def run() = try {
-          val shell = new Shell()
-          shell.setLayout(new FillLayout(SWT.VERTICAL))
-          val canvas = new FXCanvas(shell, SWT.NONE) /* {
-            override lazy val adapter = new Adapter {
-              override def paintControl(event: PaintEvent) {
-                buf.append(System.currentTimeMillis())
-                super.paintControl(event)
-              }
-            }
-          }*/
-          val adapter = JFX.exec {
-            val chart = createChart()
-            chart.setAnimated(false)
-            val scene = new Scene(chart, 500, 500)
-            canvas.setScene(scene)
-
-            Display.getDefault().asyncExec {
-              new Runnable {
-                def run() = {
-                  canvas.pack()
-                  shell.open()
-                  shell.setMaximized(true)
-                }
-              }
-            }
-          }
-        } catch {
-          case e: Throwable ⇒ e.printStackTrace()
-        }
-      }
-    }
-    val t = new Thread {
-      setDaemon(true)
-      override def run {
-        while (true) {
-          totalMem = runtime.totalMemory()
-          freeMem = runtime.freeMemory()
-          usedMem = totalMem - freeMem
-          println(s"USED: ${convertToMeg(usedMem)} FREE ${convertToMeg(freeMem)} TOTAL ${convertToMeg(totalMem)}")
-          Thread.sleep(300)
-        }
-      }
-    }
-    //t.start
-    Thread.sleep(10000)
-    //t.interrupt()
-    System.gc()
-    System.runFinalization()
-    totalMem = runtime.totalMemory()
-    freeMem = runtime.freeMemory()
-    usedMem = totalMem - freeMem
-    println(s"AFTER GC USED: ${convertToMeg(usedMem)} FREE ${convertToMeg(freeMem)} TOTAL ${convertToMeg(totalMem)}")
-    //val len = buf.last.toDouble - buf.head
-    //println(s"Total: ${len / 1000} ${buf.length} frames at ${buf.length / (len / 1000)} fps")
+    latch.await()
   }
 
   protected def createChart() = {
@@ -202,7 +137,16 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
   }
 
   def convertToMeg(numBytes: Long) = (numBytes + (512 * 1024)) / (1024 * 1024)
-
+  def getMemUsage() = {
+    System.gc()
+    System.runFinalization()
+    Thread.sleep(1000)
+    System.gc()
+    System.runFinalization()
+    totalMem = runtime.totalMemory()
+    freeMem = runtime.freeMemory()
+    totalMem - freeMem
+  }
   override def beforeAll(configMap: org.scalatest.ConfigMap) {
     adjustLoggingBeforeAll(configMap)
     DependencyInjection(config, false)

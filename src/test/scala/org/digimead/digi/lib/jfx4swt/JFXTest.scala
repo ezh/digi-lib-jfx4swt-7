@@ -31,6 +31,9 @@ import org.eclipse.swt.widgets.Display
 import org.mockito.Matchers.anyBoolean
 import org.mockito.Mockito.{ spy, timeout, verify }
 import org.scalatest.{ FreeSpec, Matchers }
+import org.digimead.digi.lib.jfx4swt.jfx.FXAdapter
+import org.digimead.digi.lib.jfx4swt.jfx.FXHost
+import scala.ref.WeakReference
 
 class JFXTest extends FreeSpec with Matchers with LoggingHelper {
   lazy val config = org.digimead.digi.lib.default
@@ -52,7 +55,7 @@ class JFXTest extends FreeSpec with Matchers with LoggingHelper {
       chart.setAnimated(false)
       val scene = new Scene(chart, 800, 600)
       val adapter = spy(new TestAdapter)
-      val host = new FXHost(adapter)
+      val host = new FXHost(WeakReference(adapter))
       val stage = new EmbeddedWindow(host)
       stage.show()
       stage.setScene(scene)

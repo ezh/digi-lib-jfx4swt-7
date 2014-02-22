@@ -26,6 +26,7 @@ import org.digimead.digi.lib.jfx4swt.JFX
 
 trait Thread {
   this: org.digimead.digi.lib.jfx4swt.JFX.type ⇒
+  val nopRunnable = new Runnable { def run {} }
 
   /** Assert the current thread against JavaFX application one. */
   def assertEventThread(EventLoop: Boolean = true) = if (EventLoop) {

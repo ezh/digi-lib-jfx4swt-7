@@ -111,14 +111,11 @@ object JFX extends jfx.Thread with Loggable {
     @tailrec
     final override def run() = {
       if (!bufferedQueue.isEmpty) {
-        try {
-          var event = bufferedQueue.poll()
-          while (event != null) {
-            event.run
-            event = bufferedQueue.poll()
-          }
-        } catch {
-          case e: Throwable ⇒ log.error(e.getMessage(), e)
+        var event = bufferedQueue.poll()
+        while (event != null) {
+          try event.run
+          catch { case e: Throwable ⇒ log.error(e.getMessage(), e) }
+          event = bufferedQueue.poll()
         }
       } else
         bufferedQueue.synchronized { bufferedQueue.wait }

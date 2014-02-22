@@ -18,9 +18,8 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-package org.digimead.digi.lib.jfx4swt
+package org.digimead.digi.lib.jfx4swt.jfx
 
-import com.sun.javafx.tk.Toolkit
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -43,8 +42,7 @@ trait FXAdapter {
     frameFull.set(null)
   }
   /**
-   * Called by FXHost when frameFull are ready.
-   * Called from JavaFX event thread.
+   * Called by FXHost from JavaFX event thread when frameFull are ready.
    */
   def redraw()
   /**
@@ -71,9 +69,8 @@ trait FXAdapter {
    */
   def setPreferredSize(x: Int, y: Int)
   /**
-   * Called by embedded FX scene to traverse focus to a component
+   * Called by embedded FX scene from JavaFX event thread to traverse focus to a component
    * which is next/previous to this container in an emedding app.
-   * Called from JavaFX event thread.
    */
   def traverseFocusOut(forward: Boolean): Boolean
 }

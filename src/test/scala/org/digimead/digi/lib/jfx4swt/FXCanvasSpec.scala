@@ -20,11 +20,15 @@
 
 package org.digimead.digi.lib.jfx4swt
 
+import java.util.concurrent.CountDownLatch
 import javafx.animation.FadeTransitionBuilder
 import javafx.collections.FXCollections
-import javafx.scene.Scene
+import javafx.geometry.VPos
+import javafx.scene.{ Group, Scene }
 import javafx.scene.chart.{ NumberAxis, StackedAreaChart, XYChart }
-import javafx.util.Duration
+import javafx.scene.layout.Pane
+import javafx.scene.text.{ Font, FontWeight, Text, TextBuilder }
+import javafx.util.{ Builder, Duration }
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.jfx4swt.JFX.JFX2interface
 import org.digimead.digi.lib.jfx4swt.jfx.FXAdapter
@@ -32,6 +36,7 @@ import org.digimead.lib.test.LoggingHelper
 import org.eclipse.swt.SWT
 import org.eclipse.swt.layout.FillLayout
 import org.eclipse.swt.widgets.{ Display, Shell }
+import org.mockito.Mockito.{ spy, verify }
 import org.scalatest.{ FreeSpec, Matchers }
 import scala.collection.mutable
 
@@ -60,7 +65,7 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
         def run() = try {
           val shell = new Shell()
           shell.setLayout(new FillLayout(SWT.VERTICAL))
-          val canvas = new FXCanvas(shell, SWT.NONE, false)  {
+          val canvas = new FXCanvas(shell, SWT.NONE, false) {
             override def createAdapter(bindSceneSizeToCanvas: Boolean) = new Adapter(bindSceneSizeToCanvas) {
               override def paintControl(event: org.eclipse.swt.events.PaintEvent) {
                 buf.append(System.currentTimeMillis())
@@ -132,8 +137,8 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
           val shell = new Shell()
           shell.setLayout(new FillLayout(SWT.VERTICAL))
           val canvas = new FXCanvas(shell, SWT.NONE) /* {
-            override lazy val adapter = new Adapter {
-              override def paintControl(event: PaintEvent) {
+            override def createAdapter(bindSceneSizeToCanvas: Boolean) = new Adapter(bindSceneSizeToCanvas) {
+              override def paintControl(event: org.eclipse.swt.events.PaintEvent) {
                 buf.append(System.currentTimeMillis())
                 super.paintControl(event)
               }
@@ -184,6 +189,54 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
     //val len = buf.last.toDouble - buf.head
     //println(s"Total: ${len / 1000} ${buf.length} frames at ${buf.length / (len / 1000)} fps")
   }
+
+  "Scene without size should be fine" in {
+    val latch = new CountDownLatch(1)
+    @volatile var adapter1: FXAdapter = null
+    Display.getDefault().asyncExec {
+      new Runnable {
+        def run() = try {
+          val shell = new Shell()
+          shell.setLayout(new FillLayout(SWT.VERTICAL))
+          val canvas = new FXCanvas(shell, SWT.NONE, false) {
+            override def createAdapter(bindSceneSizeToCanvas: Boolean) = {
+              adapter1 = spy(new Adapter(bindSceneSizeToCanvas))
+              adapter1.asInstanceOf[this.Adapter]
+            }
+          }
+          val adapter = JFX.exec {
+            val text = <>[TextBuilder[_], Text](TextBuilder.create()) { b ⇒
+              b.text("1234")
+              b.font(Font.font(null, FontWeight.BOLD, 100))
+              b.textOrigin(VPos.TOP)
+              b.build()
+            }
+            val root = new Pane()
+            root.getChildren().addAll(text)
+            val group = new Group(root)
+            val scene = new Scene(group)
+            canvas.setScene(scene, _ ⇒ latch.countDown())
+
+            Display.getDefault().asyncExec {
+              new Runnable {
+                def run() = {
+                  canvas.pack()
+                  shell.open()
+                  shell.setMaximized(true)
+                }
+              }
+            }
+          }
+        } catch {
+          case e: Throwable ⇒ e.printStackTrace()
+        }
+      }
+    }
+    latch.await()
+    verify(adapter1, org.mockito.Mockito.timeout(1000).times(1)).onHostResize(278, 116)
+  }
+
+  def <>[T, S](b: Builder[_])(f: T ⇒ S) = f(b.asInstanceOf[T])
 
   protected def createChart() = {
     val xAxis = new NumberAxis()

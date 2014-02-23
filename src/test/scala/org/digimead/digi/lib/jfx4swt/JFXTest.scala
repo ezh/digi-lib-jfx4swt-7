@@ -62,7 +62,7 @@ class JFXTest extends FreeSpec with Matchers with LoggingHelper {
       adapter
     }
     verify(adapter, timeout(1000).times(1)).redraw()
-    verify(adapter, timeout(100).times(1)).setPreferredSize(800, 600)
+    verify(adapter, timeout(100).times(1)).onHostResize(800, 600)
     verify(adapter, timeout(100).times(0)).requestFocus()
     verify(adapter, timeout(100).times(0)).setEnabled(anyBoolean)
     verify(adapter, timeout(100).times(0)).traverseFocusOut(anyBoolean)
@@ -104,7 +104,7 @@ class JFXTest extends FreeSpec with Matchers with LoggingHelper {
     def redraw() {}
     def requestFocus() = true
     def setEnabled(enabled: Boolean) {}
-    def setPreferredSize(x: Int, y: Int) {}
+    def onHostResize(x: Int, y: Int) {}
     def traverseFocusOut(forward: Boolean) = false
   }
 }

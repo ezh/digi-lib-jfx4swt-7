@@ -60,14 +60,15 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
         def run() = try {
           val shell = new Shell()
           shell.setLayout(new FillLayout(SWT.VERTICAL))
-          val canvas = new FXCanvas(shell, SWT.NONE) /* {
-            override lazy val adapter = new Adapter {
-              override def paintControl(event: PaintEvent) {
+          val canvas = new FXCanvas(shell, SWT.NONE, false)  {
+            override def createAdapter(bindSceneSizeToCanvas: Boolean) = new Adapter(bindSceneSizeToCanvas) {
+              override def paintControl(event: org.eclipse.swt.events.PaintEvent) {
                 buf.append(System.currentTimeMillis())
                 super.paintControl(event)
               }
             }
-          }*/
+          }
+          canvas.setBackground(Display.getDefault().getSystemColor(SWT.COLOR_WHITE))
           val adapter = JFX.exec {
             val chart = createChart()
             chart.setAnimated(true)
@@ -119,8 +120,8 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
     freeMem = runtime.freeMemory()
     usedMem = totalMem - freeMem
     println(s"AFTER GC USED: ${convertToMeg(usedMem)} FREE ${convertToMeg(freeMem)} TOTAL ${convertToMeg(totalMem)}")
-    //val len = buf.last.toDouble - buf.head
-    //println(s"Total: ${len / 1000} ${buf.length} frames at ${buf.length / (len / 1000)} fps")
+    val len = buf.last.toDouble - buf.head
+    println(s"Total: ${len / 1000} ${buf.length} frames at ${buf.length / (len / 1000)} fps")
   }
 
   "Static StackedAreaChart should be fine" in {

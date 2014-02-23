@@ -36,13 +36,18 @@ import scala.ref.WeakReference
  *
  * It is much better to have huge pack of small widgets that single big one.
  */
-class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
+class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean = true) extends Canvas(parent, style) {
+  /*
+   * Those variables declared as '@volatile protected var' because
+   * they will set to null after dispose.
+   * Such solution helps VM to GC complex circular references that are used here and there.
+   */
   /** Adapter between JavaFX EmbeddedWindow and SWT FXCanvas. */
-  @volatile protected var adapterInstance = createAdapter
+  @volatile protected var adapterInstance = createAdapter(bindSceneSizeToCanvas)
   @volatile protected var hostInstance = createHost(adapterInstance)
   @volatile protected var stageInstance = createJFaceCanvas(hostInstance)
-  @volatile protected var preferredHeight = 0
-  @volatile protected var preferredWidth = 0
+  @volatile protected var preferredHeight = SWT.DEFAULT
+  @volatile protected var preferredWidth = SWT.DEFAULT
   /** List of dispose listeners for JFaceCanvas. */
   protected val disposeListeners = new mutable.ArrayBuffer[JFaceCanvas ⇒ _]() with mutable.SynchronizedBuffer[JFaceCanvas ⇒ _]
 
@@ -63,7 +68,10 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
   /** Returns the preferred size of the receiver. */
   override def computeSize(wHint: Int, hHint: Int, changed: Boolean) =
     if (wHint == SWT.DEFAULT && hHint == SWT.DEFAULT)
-      new Point(preferredWidth, preferredHeight)
+      if (preferredHeight == SWT.DEFAULT || preferredHeight == SWT.DEFAULT)
+        super.computeSize(wHint, hHint, changed)
+      else
+        new Point(preferredWidth, preferredHeight)
     else {
       val size = super.computeSize(wHint, hHint, changed)
       if (wHint == SWT.DEFAULT)
@@ -75,6 +83,9 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
     }
   /** Get host. */
   def host = Option(hostInstance)
+  /** Set scene preferred size. */
+  def setPreferredSize(x: Int, y: Int) =
+    JFX.exec { if (hostInstance != null) hostInstance.setPreferredSize(x, y) }
   /** Set scene to stage. */
   def setScene[T](scene: Scene, onReady: JFaceCanvas ⇒ T = FXCanvas.nopCallback) =
     JFX.exec { stage.foreach(_.open(scene, onReady)) }
@@ -82,7 +93,7 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
   def stage = Option(stageInstance)
 
   /** Create adapter. */
-  protected def createAdapter() = new Adapter
+  protected def createAdapter(bindSceneSizeToCanvas: Boolean) = new Adapter(bindSceneSizeToCanvas)
   /** Create embedded. */
   protected def createJFaceCanvas(host: FXHost) = new JFaceCanvas(WeakReference(host))
   /** Create host. */
@@ -107,7 +118,7 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
     })
   }
 
-  class Adapter extends ControlAdapter with FXAdapter with PaintListener {
+  class Adapter(val bindSceneSizeToCanvas: Boolean) extends ControlAdapter with FXAdapter with PaintListener {
     private[this] final val paletteData = JFX.paletteData
     private[this] final var imageDataFrameOne = new ImageData(1, 1, 32, paletteData, 4, new Array[Byte](4))
     private[this] final var imageDataFrameTwo = new ImageData(1, 1, 32, paletteData, 4, new Array[Byte](4))
@@ -116,6 +127,8 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
     private[this] final var paintControlOffscreenBounds: Rectangle = null
     private[this] final var paintControlOffscreenImage: Image = null
     private[this] final var paintControlGCOffscreenImage: GC = null
+    @volatile private[this] final var hostHeight = 0
+    @volatile private[this] final var hostWidth = 0
     private[this] final var display = parent.getDisplay()
     private[this] final val disposeRWL = new ReentrantReadWriteLock()
 
@@ -125,7 +138,7 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
      *
      * @param e an event containing information about the resize
      */
-    override def controlResized(e: ControlEvent) {
+    override def controlResized(e: ControlEvent) = if (bindSceneSizeToCanvas) {
       val rect = FXCanvas.this.getClientArea()
       JFX.exec { hostInstance.setPreferredSize(rect.width, rect.height) }
     }
@@ -155,6 +168,19 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
       } finally disposeRWL.writeLock() unlock ()
     }
     /**
+     * Set container preferred size based on scene content.
+     * Called from JavaFX event thread.
+     */
+    def onHostResize(x: Int, y: Int) = {
+      disposeRWL.readLock().lock()
+      try if (display != null) {
+        hostWidth = x
+        hostHeight = y
+        FXCanvas.this.preferredWidth = x
+        FXCanvas.this.preferredHeight = y
+      } finally disposeRWL.readLock().unlock()
+    }
+    /**
      * Sent when a paint event occurs for the control.
      *
      * @param e an event containing information about the paint
@@ -162,20 +188,20 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
     // In is about 60ms at 1900x1200 :-( ~15 FPS
     // Linux devbox 3.10.0-gentoo #1 SMP PREEMPT Sat Jul 6 19:42:57 MSK 2013 x86_64 Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz GenuineIntel GNU/Linux
     // GTK Cairo is too slow
-    // Pure JavaFX with Java2D thread provides ~30 FPS at the same time. (every 2nd frame dropped)
-    // I saw no workaround for this except GLCanvas, but OpenGL is out of scope
+    // Pure JavaFX with Java2D thread provides ~30 FPS at the same time. (every 2nd frame is dropped)
+    // I see no workaround for this except GLCanvas, but OpenGL is out of scope.
     override def paintControl(event: PaintEvent) {
       paintControlToDraw = frameFull.getAndSet(null)
       // Prepare offscreen image.
       if (paintControlOffscreenImage == null ||
-        paintControlOffscreenBounds.width != event.width ||
-        paintControlOffscreenBounds.height != event.height) {
+        paintControlOffscreenBounds.width != hostWidth ||
+        paintControlOffscreenBounds.height != hostHeight) {
         if (paintControlOffscreenImage != null)
           paintControlOffscreenImage.dispose()
         if (paintControlGCOffscreenImage != null)
           paintControlGCOffscreenImage.dispose()
         // Create the image to fill the canvas.
-        paintControlOffscreenImage = new Image(event.display, new Rectangle(event.x, event.y, event.width, event.height))
+        paintControlOffscreenImage = new Image(event.display, new Rectangle(event.x, event.y, hostWidth, hostHeight))
         // Set up the offscreen gc.
         paintControlGCOffscreenImage = new GC(paintControlOffscreenImage)
         // Set offscreen bounds
@@ -184,26 +210,24 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
       if (paintControlToDraw != null) {
         paintControlImageData = if (frameOne.get() == paintControlToDraw) {
           frameEmpty.set(frameTwo.get())
-          if ((event.width * event.height * 4) != paintControlToDraw.length) {
+          if ((hostWidth * hostHeight * 4) != paintControlToDraw.length) {
             null
           } else {
             if (imageDataFrameTwo.data != paintControlToDraw)
-              imageDataFrameTwo = new ImageData(event.width, event.height, 32, paletteData, 4, paintControlToDraw)
+              imageDataFrameTwo = new ImageData(hostWidth, hostHeight, 32, paletteData, 4, paintControlToDraw)
             imageDataFrameTwo
           }
         } else {
           frameEmpty.set(frameOne.get())
-          if ((event.width * event.height * 4) != paintControlToDraw.length) {
+          if ((hostWidth * hostHeight * 4) != paintControlToDraw.length) {
             null
           } else {
             if (imageDataFrameOne.data != paintControlToDraw)
-              imageDataFrameOne = new ImageData(event.width, event.height, 32, paletteData, 4, paintControlToDraw)
+              imageDataFrameOne = new ImageData(hostWidth, hostHeight, 32, paletteData, 4, paintControlToDraw)
             imageDataFrameOne
           }
         }
         // Obtain the next frame.
-        // Draw the image offscreen.
-        paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
         if (paintControlImageData != null && isVisible()) {
           /*
            * ---> HERE <---
@@ -211,31 +235,25 @@ class FXCanvas(parent: Composite, style: Int) extends Canvas(parent, style) {
            */
           val imageFrame = new Image(event.display, paintControlImageData)
           // Draw the image offscreen.
+          paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
           paintControlGCOffscreenImage.drawImage(imageFrame, 0, 0)
           // Draw the offscreen buffer to the screen.
+          event.gc.fillRectangle(event.x, event.y, event.width, event.height)
           event.gc.drawImage(paintControlOffscreenImage, 0, 0)
           imageFrame.dispose()
+          // Reset paintControlImageData since there will maybe be resize.
+          paintControlImageData = null
         }
       } else {
         // This is a thread safe call.
         hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
-        // Draw the image offscreen.
-        paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
-        // Draw the offscreen buffer to the screen.
-        event.gc.drawImage(paintControlOffscreenImage, 0, 0)
+        event.gc.fillRectangle(event.x, event.y, event.width, event.height)
       }
-    }
-    def setPreferredSize(x: Int, y: Int) = {
-      disposeRWL.readLock().lock()
-      try if (display != null) {
-        FXCanvas.this.preferredWidth = x
-        FXCanvas.this.preferredHeight = y
-      } finally disposeRWL.readLock().unlock()
     }
     def redraw() {
       disposeRWL.readLock().lock()
       try if (display != null) display.asyncExec(new Runnable {
-        def run = if (!FXCanvas.this.isDisposed()) FXCanvas.this.redraw()
+        def run = if (!FXCanvas.this.isDisposed()) FXCanvas.this.redraw(0, 0, hostWidth, hostHeight, false)
       }) finally disposeRWL.readLock().unlock()
     }
     def requestFocus(): Boolean = {

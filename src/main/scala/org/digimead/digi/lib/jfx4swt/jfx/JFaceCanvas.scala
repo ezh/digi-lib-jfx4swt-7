@@ -81,6 +81,7 @@ class JFaceCanvas(host: WeakReference[FXHost]) extends javafx.stage.Window {
   /** Execute open sequence within Java FX thread. */
   protected def openExec(scene: Scene, onReady: JFaceCanvas ⇒ _) = {
     @deprecated("", "") def hide_warning_for_impl_peer_set(arg: TKStage) = impl_peer = arg
+    host.get.foreach(_.setScene(scene))
     if (getScene() == null) {
       setScene(scene)
       host.get.foreach(host ⇒ hide_warning_for_impl_peer_set(Toolkit.getToolkit.createTKEmbeddedStage(host)))

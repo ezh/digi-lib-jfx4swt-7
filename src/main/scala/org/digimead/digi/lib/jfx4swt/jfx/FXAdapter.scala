@@ -42,6 +42,11 @@ trait FXAdapter {
     frameFull.set(null)
   }
   /**
+   * Set container preferred size based on scene content.
+   * Called from JavaFX event thread.
+   */
+  def onHostResize(x: Int, y: Int)
+  /**
    * Called by FXHost from JavaFX event thread when frameFull are ready.
    */
   def redraw()
@@ -63,11 +68,6 @@ trait FXAdapter {
    * @param enabled the new enabled state
    */
   def setEnabled(enabled: Boolean)
-  /**
-   * Set container preferred size based on scene content.
-   * Called from JavaFX event thread.
-   */
-  def setPreferredSize(x: Int, y: Int)
   /**
    * Called by embedded FX scene from JavaFX event thread to traverse focus to a component
    * which is next/previous to this container in an emedding app.

@@ -29,6 +29,7 @@ import javafx.scene.{ Group, Scene }
 import org.digimead.digi.lib.Disposable
 import org.digimead.digi.lib.jfx4swt.JFX
 import org.digimead.digi.lib.log.api.Loggable
+import org.eclipse.swt.SWT
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.ref.WeakReference
@@ -48,17 +49,18 @@ import scala.ref.WeakReference
 class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
   private[this] final var dataToConvert = 0
   private[this] final var destinationPointer = 0
-  private[this] final var height = 0
+  private[this] final var height = SWT.DEFAULT
   private[this] final var rawPixelsBuf: IntBuffer = null
   private[this] final var rawPixelsBufArray: Array[Int] = null
   @volatile private[this] final var scene: EmbeddedScene = null
   private[this] final var sourcePointer = 0
   @volatile private[this] final var stage: EmbeddedStage = null
-  private[this] final var width = 0
+  private[this] final var width = SWT.DEFAULT
   private[this] final var repaintLastToDraw: Array[Byte] = null
   private[this] final var pipeBuf: Array[Int] = null
   private[this] final val pipeLock = new ReentrantLock()
   @volatile private[this] var disposed = false
+  @volatile private[this] final var userScene: Scene = null
   // Render thread returns scene with old size rendered on frame with new size!!! ???
   // Somewhere inside Quantum few neighbor operators/locks are not ordered.
   // It is a case of ~1-2ms or less
@@ -79,6 +81,9 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
         rawPixelsBufArray = null
         pipeBuf = null
         repaintLastToDraw = null
+        height = SWT.DEFAULT
+        width = SWT.DEFAULT
+        userScene = null
       } finally pipeLock.unlock()
     } else {
       JFX.exec { dispose }
@@ -135,6 +140,9 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
                   adapter.frameEmpty.set(toDraw)
                 }
               } catch {
+                case e: ArrayIndexOutOfBoundsException ⇒
+                  adapter.frameEmpty.set(repaintLastToDraw)
+                  scene.entireSceneNeedsRepaint()
                 case e: Throwable ⇒ FXHost.log.error("FXHost pipe. " + e.getMessage(), e)
               } finally pipeLock.unlock()
             }
@@ -142,8 +150,10 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
             oneMoreFramePlease = false
             JFX.execAsync { // Required
               if (scene != null && stage != null) {
-                scene.setSize(width, height)
-                stage.setSize(width, height)
+                if (width != SWT.DEFAULT && height != SWT.DEFAULT) {
+                  scene.setSize(width, height)
+                  stage.setSize(width, height)
+                }
                 scene.entireSceneNeedsRepaint()
               }
             }
@@ -167,11 +177,9 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
         disposeEmbeddedScene()
       dataToConvert = 0
       destinationPointer = 0
-      height = 0
       rawPixelsBuf = null
       rawPixelsBufArray = null
       sourcePointer = 0
-      width = 0
       this.scene = scene.asInstanceOf[com.sun.javafx.tk.quantum.EmbeddedScene]
       pipeBuf = null
       oneMoreFramePlease = true
@@ -180,18 +188,19 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
   def setEmbeddedStage(stage: com.sun.javafx.embed.EmbeddedStageInterface) {
     if (stage == null && disposed)
       return
-    if (stage != null && width != 0 && height != 0)
+    if (stage != null && width != SWT.DEFAULT && height != SWT.DEFAULT)
       stage.setSize(width, height)
     if (this.stage != null)
       disposeEmbeddedStage()
     this.stage = stage.asInstanceOf[com.sun.javafx.tk.quantum.EmbeddedStage]
   }
   def setEnabled(enabled: Boolean) = if (!disposed) adapter.get.map(_.setEnabled(enabled))
+  /** Set host preferred size. */
   def setPreferredSize(x: Int, y: Int): Unit = for {
     adapter ← adapter.get
   } {
     JFX.assertEventThread()
-    if (width == x && height == y || disposed)
+    if ((width == x && height == y) || x == SWT.DEFAULT || y == SWT.DEFAULT || disposed)
       return
     pipeLock.lock()
     try {
@@ -206,12 +215,18 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
       pipeBuf = new Array(rawPixelsBufArray.length)
       if (stage != null)
         stage.setSize(width, height)
-      if (scene != null) {
+      if (scene != null)
         scene.setSize(width, height)
-      }
+      oneMoreFramePlease = true
     } finally pipeLock.unlock()
-    oneMoreFramePlease = true
-    adapter.setPreferredSize(x, y)
+    adapter.onHostResize(width, height)
+  }
+  /** Assign user scene to host which is required for calculating preferred size. */
+  def setScene(scene: Scene) {
+    JFX.assertEventThread()
+    userScene = scene
+    if (width == SWT.DEFAULT || height == SWT.DEFAULT)
+      setPreferredSize(width, height)
   }
   def traverseFocusOut(forward: Boolean): Boolean = if (disposed) false else adapter.get.map(_.traverseFocusOut(forward)).getOrElse(false)
 
@@ -237,6 +252,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
   protected def disposeEmbeddedStage() {
     val stage = this.stage
     this.stage = null
+    this.userScene = null
     stage.close()
     stage.setTKStageListener(null)
     JFX.execAsync { Disposable.clean(stage) }

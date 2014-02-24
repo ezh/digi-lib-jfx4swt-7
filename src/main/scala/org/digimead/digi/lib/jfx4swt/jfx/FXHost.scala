@@ -60,7 +60,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
   private[this] final var pipeBuf: Array[Int] = null
   private[this] final val pipeLock = new ReentrantLock()
   @volatile private[this] var disposed = false
-  @volatile private[this] final var userScene: Scene = null
+  @volatile protected[this] final var userScene: Scene = null
   // Render thread returns scene with old size rendered on frame with new size!!! ???
   // Somewhere inside Quantum few neighbor operators/locks are not ordered.
   // It is a case of ~1-2ms or less

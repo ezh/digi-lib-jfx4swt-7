@@ -85,7 +85,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
   def host = Option(hostInstance)
   /** Set scene preferred size. */
   def setPreferredSize(x: Int, y: Int) =
-    JFX.exec { if (hostInstance != null) hostInstance.setPreferredSize(x, y) }
+    JFX.exec { Option(hostInstance).foreach(_.setPreferredSize(x, y)) }
   /** Set scene to stage. */
   def setScene[T](scene: Scene, onReady: JFaceCanvas ⇒ T = FXCanvas.nopCallback) =
     JFX.exec { stage.foreach(_.open(scene, onReady)) }
@@ -140,7 +140,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
      */
     override def controlResized(e: ControlEvent) = if (bindSceneSizeToCanvas) {
       val rect = FXCanvas.this.getClientArea()
-      JFX.exec { hostInstance.setPreferredSize(rect.width, rect.height) }
+      JFX.exec { Option(hostInstance).foreach(_.setPreferredSize(rect.width, rect.height)) }
     }
     /**
      * Dispose adapter.
@@ -191,6 +191,8 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
     // Pure JavaFX with Java2D thread provides ~30 FPS at the same time. (every 2nd frame is dropped)
     // I see no workaround for this except GLCanvas, but OpenGL is out of scope.
     override def paintControl(event: PaintEvent) {
+      if (event.width <= 0 || event.height <= 0)
+        return
       paintControlToDraw = frameFull.getAndSet(null)
       // Prepare offscreen image.
       if (paintControlOffscreenImage == null ||
@@ -200,12 +202,17 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
           paintControlOffscreenImage.dispose()
         if (paintControlGCOffscreenImage != null)
           paintControlGCOffscreenImage.dispose()
-        // Create the image to fill the canvas.
-        paintControlOffscreenImage = new Image(event.display, new Rectangle(event.x, event.y, hostWidth, hostHeight))
-        // Set up the offscreen gc.
-        paintControlGCOffscreenImage = new GC(paintControlOffscreenImage)
-        // Set offscreen bounds
-        paintControlOffscreenBounds = paintControlOffscreenImage.getBounds()
+        if (hostWidth > 0 && hostHeight > 0) {
+          // Create the image to fill the canvas.
+          paintControlOffscreenImage = new Image(event.display, hostWidth, hostHeight)
+          // Set up the offscreen gc.
+          paintControlGCOffscreenImage = new GC(paintControlOffscreenImage)
+          // Set offscreen bounds
+          paintControlOffscreenBounds = paintControlOffscreenImage.getBounds()
+        } else {
+          paintControlOffscreenImage = null
+          paintControlGCOffscreenImage = null
+        }
       }
       if (paintControlToDraw != null) {
         paintControlImageData = if (frameOne.get() == paintControlToDraw) {
@@ -228,26 +235,28 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
           }
         }
         // Obtain the next frame.
-        if (paintControlImageData != null && isVisible()) {
-          /*
-           * ---> HERE <---
-           * most CPU and memory hungry
-           */
-          val imageFrame = new Image(event.display, paintControlImageData)
-          // Draw the image offscreen.
-          paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
-          paintControlGCOffscreenImage.drawImage(imageFrame, 0, 0)
-          // Draw the offscreen buffer to the screen.
+        if (isVisible()) {
+          if (paintControlImageData != null) {
+            /*
+             * ---> HERE <---
+             * most CPU and memory hungry
+             */
+            val imageFrame = new Image(event.display, paintControlImageData)
+            // Draw the image offscreen.
+            paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
+            paintControlGCOffscreenImage.drawImage(imageFrame, 0, 0)
+            // Draw the offscreen buffer to the screen.
+            event.gc.fillRectangle(event.x, event.y, event.width, event.height)
+            event.gc.drawImage(paintControlOffscreenImage, 0, 0)
+            imageFrame.dispose()
+            // Reset paintControlImageData since there will maybe be resize.
+            paintControlImageData = null
+          }
+        } else {
+          // This is a thread safe call.
+          hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
           event.gc.fillRectangle(event.x, event.y, event.width, event.height)
-          event.gc.drawImage(paintControlOffscreenImage, 0, 0)
-          imageFrame.dispose()
-          // Reset paintControlImageData since there will maybe be resize.
-          paintControlImageData = null
         }
-      } else {
-        // This is a thread safe call.
-        hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
-        event.gc.fillRectangle(event.x, event.y, event.width, event.height)
       }
     }
     def redraw() {

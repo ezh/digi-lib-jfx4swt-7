@@ -66,7 +66,7 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
           val shell = new Shell()
           shell.setLayout(new FillLayout(SWT.VERTICAL))
           val canvas = new FXCanvas(shell, SWT.NONE, false) {
-            override def createAdapter(bindSceneSizeToCanvas: Boolean) = new Adapter(bindSceneSizeToCanvas) {
+            override def createAdapter(bindSceneSizeToCanvas: Boolean, antiFreeze: Boolean) = new Adapter(bindSceneSizeToCanvas, antiFreeze) {
               override def paintControl(event: org.eclipse.swt.events.PaintEvent) {
                 buf.append(System.currentTimeMillis())
                 super.paintControl(event)
@@ -199,8 +199,8 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
           val shell = new Shell()
           shell.setLayout(new FillLayout(SWT.VERTICAL))
           val canvas = new FXCanvas(shell, SWT.NONE, false) {
-            override def createAdapter(bindSceneSizeToCanvas: Boolean) = {
-              adapter1 = spy(new Adapter(bindSceneSizeToCanvas))
+            override def createAdapter(bindSceneSizeToCanvas: Boolean, antiFreeze: Boolean) = {
+              adapter1 = spy(new Adapter(bindSceneSizeToCanvas, antiFreeze))
               adapter1.asInstanceOf[this.Adapter]
             }
           }

@@ -89,7 +89,7 @@ class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
           shell.addDisposeListener(new DisposeListener { def widgetDisposed(e: DisposeEvent) = latch.countDown() })
           shell.setLayout(new FillLayout(SWT.VERTICAL))
           val canvas = new FXCanvas(shell, SWT.NONE) {
-            override def createAdapter(bindSceneSizeToCanvas: Boolean) = new Adapter(bindSceneSizeToCanvas) {
+            override def createAdapter(bindSceneSizeToCanvas: Boolean, antiFreeze: Boolean) = new Adapter(bindSceneSizeToCanvas, antiFreeze) {
               var n = 0
               override def paintControl(event: PaintEvent) {
                 n += 1

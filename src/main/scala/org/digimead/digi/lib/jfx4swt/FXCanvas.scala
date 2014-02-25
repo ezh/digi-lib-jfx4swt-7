@@ -43,7 +43,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
    * Such solution helps VM to GC complex circular references that are used here and there.
    */
   /** Adapter between JavaFX EmbeddedWindow and SWT FXCanvas. */
-  @volatile protected var adapterInstance = createAdapter(bindSceneSizeToCanvas)
+  @volatile protected var adapterInstance = createAdapter(bindSceneSizeToCanvas, true)
   @volatile protected var hostInstance = createHost(adapterInstance)
   @volatile protected var stageInstance = createJFaceCanvas(hostInstance)
   @volatile protected var preferredHeight = SWT.DEFAULT
@@ -93,7 +93,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
   def stage = Option(stageInstance)
 
   /** Create adapter. */
-  protected def createAdapter(bindSceneSizeToCanvas: Boolean) = new Adapter(bindSceneSizeToCanvas)
+  protected def createAdapter(bindSceneSizeToCanvas: Boolean, antiFreeze: Boolean) = new Adapter(bindSceneSizeToCanvas, antiFreeze)
   /** Create embedded. */
   protected def createJFaceCanvas(host: FXHost) = new JFaceCanvas(WeakReference(host))
   /** Create host. */
@@ -118,7 +118,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
     })
   }
 
-  class Adapter(val bindSceneSizeToCanvas: Boolean) extends ControlAdapter with FXAdapter with PaintListener {
+  class Adapter(val bindSceneSizeToCanvas: Boolean, val antiFreeze: Boolean) extends ControlAdapter with FXAdapter with PaintListener {
     private[this] final val paletteData = JFX.paletteData
     private[this] final var imageDataFrameOne = new ImageData(1, 1, 32, paletteData, 4, new Array[Byte](4))
     private[this] final var imageDataFrameTwo = new ImageData(1, 1, 32, paletteData, 4, new Array[Byte](4))
@@ -131,6 +131,10 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
     @volatile private[this] final var hostWidth = 0
     private[this] final var display = parent.getDisplay()
     private[this] final val disposeRWL = new ReentrantReadWriteLock()
+    private[this] final var paintLastX = 0
+    private[this] final var paintLastY = 0
+    private[this] final var paintLastWidth = 0
+    private[this] final var paintLastHeight = 0
 
     /**
      * Sent when the size (width, height) of a control changes.
@@ -194,26 +198,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
       if (event.width <= 0 || event.height <= 0)
         return
       paintControlToDraw = frameFull.getAndSet(null)
-      // Prepare offscreen image.
-      if (paintControlOffscreenImage == null ||
-        paintControlOffscreenBounds.width != hostWidth ||
-        paintControlOffscreenBounds.height != hostHeight) {
-        if (paintControlOffscreenImage != null)
-          paintControlOffscreenImage.dispose()
-        if (paintControlGCOffscreenImage != null)
-          paintControlGCOffscreenImage.dispose()
-        if (hostWidth > 0 && hostHeight > 0) {
-          // Create the image to fill the canvas.
-          paintControlOffscreenImage = new Image(event.display, hostWidth, hostHeight)
-          // Set up the offscreen gc.
-          paintControlGCOffscreenImage = new GC(paintControlOffscreenImage)
-          // Set offscreen bounds
-          paintControlOffscreenBounds = paintControlOffscreenImage.getBounds()
-        } else {
-          paintControlOffscreenImage = null
-          paintControlGCOffscreenImage = null
-        }
-      }
+      // Free shared resource early at the beginning.
       if (paintControlToDraw != null) {
         paintControlImageData = if (frameOne.get() == paintControlToDraw) {
           frameEmpty.set(frameTwo.get())
@@ -234,28 +219,67 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
             imageDataFrameOne
           }
         }
-        // Obtain the next frame.
-        if (isVisible()) {
-          if (paintControlImageData != null) {
-            /*
-             * ---> HERE <---
-             * most CPU and memory hungry
-             */
-            val imageFrame = new Image(event.display, paintControlImageData)
-            // Draw the image offscreen.
-            paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
-            paintControlGCOffscreenImage.drawImage(imageFrame, 0, 0)
-            // Draw the offscreen buffer to the screen.
-            event.gc.fillRectangle(event.x, event.y, event.width, event.height)
-            event.gc.drawImage(paintControlOffscreenImage, 0, 0)
-            imageFrame.dispose()
-            // Reset paintControlImageData since there will maybe be resize.
-            paintControlImageData = null
-          }
+      } else if (paintLastX != event.x || paintLastY != event.y || paintLastWidth != event.width || paintLastHeight != event.height)
+        // Reset paintControlImageData since there was resize.
+        paintControlImageData = null
+      // Prepare offscreen image.
+      if (paintControlOffscreenImage == null ||
+        paintControlOffscreenBounds.width != hostWidth ||
+        paintControlOffscreenBounds.height != hostHeight) {
+        if (paintControlOffscreenImage != null)
+          paintControlOffscreenImage.dispose()
+        if (paintControlGCOffscreenImage != null)
+          paintControlGCOffscreenImage.dispose()
+        if (hostWidth > 0 && hostHeight > 0) {
+          // Create the image to fill the canvas.
+          paintControlOffscreenImage = new Image(event.display, hostWidth, hostHeight)
+          // Set up the offscreen gc.
+          paintControlGCOffscreenImage = new GC(paintControlOffscreenImage)
+          // Set offscreen bounds
+          paintControlOffscreenBounds = paintControlOffscreenImage.getBounds()
         } else {
+          paintControlOffscreenImage = null
+          paintControlGCOffscreenImage = null
+        }
+      }
+      // Obtain the next frame.
+      if (isVisible()) {
+        if (paintControlImageData != null) {
+          /*
+           * ---> HERE <---
+           * most CPU and memory hungry
+           */
+          val imageFrame = new Image(event.display, paintControlImageData)
+          // Draw the image offscreen.
+          paintControlGCOffscreenImage.setBackground(event.gc.getBackground())
+          paintControlGCOffscreenImage.drawImage(imageFrame, 0, 0)
+          // Draw the offscreen buffer to the screen.
+          event.gc.fillRectangle(event.x, event.y, event.width, event.height)
+          event.gc.drawImage(paintControlOffscreenImage, 0, 0)
+          imageFrame.dispose()
+          // Reset paintControlImageData since there will maybe be resize.
+          paintLastX = event.x
+          paintLastY = event.y
+          paintLastWidth = event.width
+          paintLastHeight = event.height
+        } else {
+          if (paintLastX != event.x || paintLastY != event.y || paintLastWidth != event.width || paintLastHeight != event.height)
+            event.gc.fillRectangle(event.x, event.y, event.width, event.height)
           // This is a thread safe call.
           hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
-          event.gc.fillRectangle(event.x, event.y, event.width, event.height)
+        }
+        if (antiFreeze && paintControlImageData != null) {
+          // Anti freeze. Take last frame and compare it with previous.
+          val lastFrame = frameEmpty.getAndSet(null)
+          if (lastFrame != null && (lastFrame == frameOne.get() || lastFrame == frameTwo.get())) {
+            if (frameOne.get().deep != frameTwo.get().deep) {
+              // Renew if there is difference.
+              frameEmpty.set(lastFrame)
+              hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
+            } else {
+              frameEmpty.set(lastFrame)
+            }
+          }
         }
       }
     }

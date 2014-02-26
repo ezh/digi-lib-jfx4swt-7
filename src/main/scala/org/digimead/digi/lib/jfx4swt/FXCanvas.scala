@@ -29,6 +29,8 @@ import org.eclipse.swt.events.{ ControlAdapter, ControlEvent, DisposeEvent, Disp
 import org.eclipse.swt.graphics.{ GC, Image, ImageData, Point, Rectangle }
 import org.eclipse.swt.widgets.{ Canvas, Composite }
 import scala.collection.mutable
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.ref.WeakReference
 
 /**
@@ -83,9 +85,15 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
     }
   /** Get host. */
   def host = Option(hostInstance)
+  /** Redraw. */
+  def sceneNeedsRepaint() = host.foreach(_.embeddedScene.foreach(_.entireSceneNeedsRepaint()))
   /** Set scene preferred size. */
-  def setPreferredSize(x: Int, y: Int) =
-    JFX.exec { Option(hostInstance).foreach(_.setPreferredSize(x, y)) }
+  def setPreferredSize(x: Int, y: Int) = Option(hostInstance).foreach { host ⇒
+    preferredWidth = x
+    preferredHeight = y
+    JFX.exec { host.setPreferredSize(x, y) }
+  }
+
   /** Set scene to stage. */
   def setScene[T](scene: Scene, onReady: JFaceCanvas ⇒ T = FXCanvas.nopCallback) =
     JFX.exec { stage.foreach(_.open(scene, onReady)) }
@@ -272,12 +280,15 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
           // Anti freeze. Take last frame and compare it with previous.
           val lastFrame = frameEmpty.getAndSet(null)
           if (lastFrame != null && (lastFrame == frameOne.get() || lastFrame == frameTwo.get())) {
-            if (frameOne.get().deep != frameTwo.get().deep) {
-              // Renew if there is difference.
-              frameEmpty.set(lastFrame)
-              hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
-            } else {
-              frameEmpty.set(lastFrame)
+            // Give the space for the thread's neighbor
+            Future {
+              if (frameOne.get().deep != frameTwo.get().deep) {
+                // Renew if there is difference.
+                frameEmpty.set(lastFrame)
+                hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
+              } else {
+                frameEmpty.set(lastFrame)
+              }
             }
           }
         }

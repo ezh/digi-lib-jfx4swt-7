@@ -36,12 +36,14 @@ class JFX extends Loggable {
   /** Default palette for ImageData. */
   val paletteData = new PaletteData(0xFF00, 0xFF0000, 0xFF000000)
   /** Event queue. */
-  protected[this] val bufferedQueue = new ConcurrentLinkedQueue[Runnable]
+  @volatile protected[this] var bufferedQueue = new ConcurrentLinkedQueue[Runnable]
   /** Event queue thread. */
-  protected[this] val thread = new JFX.EventThread(bufferedQueue)
+  @volatile protected[this] var thread: JFX.EventThread = null
+  /** Start/stop lock. */
+  protected[this] val lock = new Object
 
   /** Start event thread. */
-  def start(runnable: Runnable = new Runnable { def run {} }, priority: Int = Thread.MAX_PRIORITY) {
+  def start(runnable: Runnable = new Runnable { def run {} }, priority: Int = Thread.MAX_PRIORITY) = lock.synchronized {
     val startupLatch = new CountDownLatch(1)
     if (System.getProperty("quantum.multithreaded") == null)
       if (JFX.multithreaded)
@@ -54,18 +56,37 @@ class JFX extends Loggable {
     factoryInstanceField.set(null, new JFXPlatformFactory)
     if (PlatformFactory.getPlatformFactory().getClass() != classOf[JFXPlatformFactory])
       throw new IllegalStateException("Unexpected JavaFX platform factory: " + PlatformFactory.getPlatformFactory())
-    thread.setDaemon(true)
-    thread.setPriority(priority)
-    thread.start()
+    if (thread != null)
+      throw new IllegalStateException("JavaFX application thread is already exists.")
     try {
-      PlatformImpl.startup(new Runnable {
+      try PlatformImpl.runLater(new Runnable {
         def run {
-          runnable.run()
-          startupLatch.countDown()
-          log.debug("JFX4SWT started.")
+          Thread.currentThread() match {
+            case thread: JFX.EventThread ⇒
+              // There was OSGi bundle restart.
+              JFX.this.thread = thread
+              JFX.this.bufferedQueue = thread.getBufferedQueue()
+            case thread ⇒
+              log.warn(s"Unexpected Java FX event thread: ${thread}")
+          }
+
         }
       })
-      startupLatch.await()
+      catch {
+        case e: IllegalStateException if e.getMessage == "Toolkit not initialized" ⇒
+          thread = new JFX.EventThread(bufferedQueue)
+          thread.setDaemon(true)
+          thread.setPriority(priority)
+          thread.start()
+          PlatformImpl.startup(new Runnable {
+            def run {
+              runnable.run()
+              startupLatch.countDown()
+              log.debug("JFX4SWT started.")
+            }
+          })
+          startupLatch.await()
+      }
     } catch { case e: Throwable ⇒ log.error(e.getMessage, e) }
   }
   /** Add event to buffered queue. */
@@ -74,15 +95,24 @@ class JFX extends Loggable {
     bufferedQueue.notifyAll
   }
   /** Stop event thread. */
-  def stop(runnable: Runnable = new Runnable { def run {} }) {
+  def stop(runnable: Runnable = new Runnable { def run {} }, softstop: Boolean = false) = lock.synchronized {
     val stopLatch = new CountDownLatch(1)
-    thread.stop(new Runnable {
+    val stopRunnable = new Runnable {
       def run {
         runnable.run()
         stopLatch.countDown()
         log.debug("JFX4SWT stopped.")
       }
-    })
+    }
+    if (softstop) {
+      // Allow to reuse Java FX after the bundle restart
+      // Note: The event threat has 'daemon' flag
+      offer(stopRunnable)
+    } else {
+      PlatformImpl.exit()
+      thread.stop(stopRunnable)
+    }
+    thread = null
     stopLatch.await()
   }
 }
@@ -104,9 +134,12 @@ object JFX extends jfx.Thread with Loggable {
   /** Long running runnable (like dialog, that waiting user input). */
   case object LongRunnable extends EventLoopRunnableDuration
   /** Event loop implementation. */
-  class EventThread(bufferedQueue: ConcurrentLinkedQueue[Runnable]) extends Thread(s"JavaFX Application Thread") {
+  class EventThread(private[this] val bufferedQueue: ConcurrentLinkedQueue[Runnable], val ccl: ClassLoader = null)
+    extends Thread(s"JavaFX Application Thread") {
     protected[this] var running = true
 
+    /** Get buffered queue. */
+    def getBufferedQueue() = bufferedQueue
     /** Event loop. */
     @tailrec
     final override def run() = {
@@ -123,14 +156,16 @@ object JFX extends jfx.Thread with Loggable {
         run
     }
     /** Stop event loop. */
-    def stop(event: Runnable) = bufferedQueue.synchronized {
-      bufferedQueue.offer(new Runnable {
-        def run {
-          EventThread.this.running = false
-          event.run()
-        }
-      })
-      bufferedQueue.notifyAll
+    def stop(event: Runnable) = {
+      bufferedQueue.synchronized {
+        bufferedQueue.offer(new Runnable {
+          def run {
+            EventThread.this.running = false
+            event.run()
+          }
+        })
+        bufferedQueue.notifyAll
+      }
     }
   }
   /**

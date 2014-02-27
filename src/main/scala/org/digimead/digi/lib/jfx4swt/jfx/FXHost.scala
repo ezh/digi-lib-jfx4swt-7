@@ -23,6 +23,7 @@ package org.digimead.digi.lib.jfx4swt.jfx
 import com.sun.javafx.embed.HostInterface
 import com.sun.javafx.tk.quantum.{ EmbeddedScene, EmbeddedStage }
 import java.nio.IntBuffer
+import java.util.concurrent.Executors
 import java.util.concurrent.locks.ReentrantLock
 import javafx.application.Platform
 import javafx.scene.{ Group, Scene }
@@ -30,8 +31,7 @@ import org.digimead.digi.lib.Disposable
 import org.digimead.digi.lib.jfx4swt.JFX
 import org.digimead.digi.lib.log.api.Loggable
 import org.eclipse.swt.SWT
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.concurrent.{ ExecutionContext, Future }
 import scala.ref.WeakReference
 
 /**
@@ -65,6 +65,8 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
   // Somewhere inside Quantum few neighbor operators/locks are not ordered.
   // It is a case of ~1-2ms or less
   @volatile private[this] final var oneMoreFramePlease = true
+  private[this] var wantRepaint: Future[_] = null
+  private[this] implicit val ec = FXHost.ec
 
   def dispose() {
     disposed = true
@@ -164,6 +166,13 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
           adapter.frameEmpty.set(repaintLastToDraw)
         }
       } finally pipeLock.unlock()
+    } else if (wantRepaint == null) wantRepaint = Future {
+      while (adapter.frameEmpty.get == null)
+        Thread.sleep(5) // 200 FPS max
+      try JFX.exec {
+        wantRepaint = null
+        repaint()
+      }
     }
   }
   def requestFocus(): Boolean = if (disposed) false else adapter.get.map(_.requestFocus()).getOrElse(false)
@@ -260,5 +269,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
 }
 
 object FXHost extends Loggable {
+  /** FXHost thread pool that used as mediator between Java FX and SWT. */
+  val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32))
   lazy val scene = new Scene(new Group)
 }

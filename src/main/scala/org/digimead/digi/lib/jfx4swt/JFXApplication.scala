@@ -49,7 +49,7 @@ class JFXApplication extends com.sun.glass.ui.Application {
   def createWindow(owner: Window, screen: Screen, styleMask: Int): Window = new jfx.Window(owner, screen, styleMask)
   def createWindow(parent: Long): Window = ???
   def supportsTransparentWindows(): Boolean = false
-  override protected def finishTerminating() { ??? }
+  override protected def finishTerminating() {}
   override protected def shouldUpdateWindow(): Boolean = ???
   protected def _enterNestedEventLoop(): AnyRef = ???
   /**

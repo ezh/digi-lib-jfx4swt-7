@@ -45,7 +45,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
    * Such solution helps VM to GC complex circular references that are used here and there.
    */
   /** Adapter between JavaFX EmbeddedWindow and SWT FXCanvas. */
-  @volatile protected var adapterInstance = createAdapter(bindSceneSizeToCanvas, true)
+  @volatile protected var adapterInstance = createAdapter(bindSceneSizeToCanvas)
   @volatile protected var hostInstance = createHost(adapterInstance)
   @volatile protected var stageInstance = createJFaceCanvas(hostInstance)
   @volatile protected var preferredHeight = SWT.DEFAULT
@@ -89,6 +89,8 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
   def sceneNeedsRepaint() = host.foreach(_.embeddedScene.foreach(_.entireSceneNeedsRepaint()))
   /** Set scene preferred size. */
   def setPreferredSize(x: Int, y: Int) = Option(hostInstance).foreach { host ⇒
+    // Event if preferredWidth/preferredHeight will be inconsistent
+    // there will be onHostResize from host.
     preferredWidth = x
     preferredHeight = y
     JFX.exec { host.setPreferredSize(x, y) }
@@ -101,7 +103,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
   def stage = Option(stageInstance)
 
   /** Create adapter. */
-  protected def createAdapter(bindSceneSizeToCanvas: Boolean, antiFreeze: Boolean) = new Adapter(bindSceneSizeToCanvas, antiFreeze)
+  protected def createAdapter(bindSceneSizeToCanvas: Boolean) = new Adapter(bindSceneSizeToCanvas)
   /** Create embedded. */
   protected def createJFaceCanvas(host: FXHost) = new JFaceCanvas(WeakReference(host))
   /** Create host. */
@@ -126,7 +128,7 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
     })
   }
 
-  class Adapter(val bindSceneSizeToCanvas: Boolean, val antiFreeze: Boolean) extends ControlAdapter with FXAdapter with PaintListener {
+  class Adapter(val bindSceneSizeToCanvas: Boolean) extends ControlAdapter with FXAdapter with PaintListener {
     private[this] final val paletteData = JFX.paletteData
     private[this] final var imageDataFrameOne = new ImageData(1, 1, 32, paletteData, 4, new Array[Byte](4))
     private[this] final var imageDataFrameTwo = new ImageData(1, 1, 32, paletteData, 4, new Array[Byte](4))
@@ -275,22 +277,6 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
             event.gc.fillRectangle(event.x, event.y, event.width, event.height)
           // This is a thread safe call.
           hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
-        }
-        if (antiFreeze && paintControlImageData != null) {
-          // Anti freeze. Take last frame and compare it with previous.
-          val lastFrame = frameEmpty.getAndSet(null)
-          if (lastFrame != null && (lastFrame == frameOne.get() || lastFrame == frameTwo.get())) {
-            // Give the space for the thread's neighbor
-            Future {
-              if (frameOne.get().deep != frameTwo.get().deep) {
-                // Renew if there is difference.
-                frameEmpty.set(lastFrame)
-                hostInstance.embeddedScene.foreach(_.entireSceneNeedsRepaint())
-              } else {
-                frameEmpty.set(lastFrame)
-              }
-            }
-          }
         }
       }
     }

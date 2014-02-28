@@ -44,7 +44,6 @@ class JFX extends Loggable {
 
   /** Start event thread. */
   def start(runnable: Runnable = new Runnable { def run {} }, priority: Int = Thread.MAX_PRIORITY) = lock.synchronized {
-    val startupLatch = new CountDownLatch(1)
     if (System.getProperty("quantum.multithreaded") == null)
       if (JFX.multithreaded)
         System.setProperty("quantum.multithreaded", "true")
@@ -66,14 +65,16 @@ class JFX extends Loggable {
               // There was OSGi bundle restart.
               JFX.this.thread = thread
               JFX.this.bufferedQueue = thread.getBufferedQueue()
+              runnable.run()
+              log.debug("JFX4SWT is resumed.")
             case thread ⇒
               log.warn(s"Unexpected Java FX event thread: ${thread}")
           }
-
         }
       })
       catch {
         case e: IllegalStateException if e.getMessage == "Toolkit not initialized" ⇒
+          val startupLatch = new CountDownLatch(1)
           thread = new JFX.EventThread(bufferedQueue)
           thread.setDaemon(true)
           thread.setPriority(priority)
@@ -82,7 +83,7 @@ class JFX extends Loggable {
             def run {
               runnable.run()
               startupLatch.countDown()
-              log.debug("JFX4SWT started.")
+              log.debug("JFX4SWT is started.")
             }
           })
           startupLatch.await()
@@ -97,13 +98,22 @@ class JFX extends Loggable {
   /** Stop event thread. */
   def stop(runnable: Runnable = new Runnable { def run {} }, softstop: Boolean = false) = lock.synchronized {
     val stopLatch = new CountDownLatch(1)
-    val stopRunnable = new Runnable {
-      def run {
-        runnable.run()
-        stopLatch.countDown()
-        log.debug("JFX4SWT stopped.")
+    val stopRunnable = if (softstop)
+      new Runnable {
+        def run {
+          runnable.run()
+          stopLatch.countDown()
+          log.debug("JFX4SWT is suspended.")
+        }
       }
-    }
+    else
+      new Runnable {
+        def run {
+          runnable.run()
+          stopLatch.countDown()
+          log.debug("JFX4SWT is stopped.")
+        }
+      }
     if (softstop) {
       // Allow to reuse Java FX after the bundle restart
       // Note: The event threat has 'daemon' flag

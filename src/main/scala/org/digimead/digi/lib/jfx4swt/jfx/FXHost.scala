@@ -172,6 +172,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
       try JFX.exec {
         wantRepaint = null
         repaint()
+        Future { embeddedScene.foreach(_.entireSceneNeedsRepaint()) }
       }
     }
   }

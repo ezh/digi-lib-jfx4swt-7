@@ -145,7 +145,8 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
                 case e: ArrayIndexOutOfBoundsException ⇒
                   adapter.frameEmpty.set(repaintLastToDraw)
                   scene.entireSceneNeedsRepaint()
-                case e: Throwable ⇒ FXHost.log.error("FXHost pipe. " + e.getMessage(), e)
+                case e: Throwable ⇒
+                  FXHost.log.error("FXHost pipe. " + e.getMessage(), e)
               } finally pipeLock.unlock()
             }
           } else {
@@ -167,7 +168,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
         }
       } finally pipeLock.unlock()
     } else if (wantRepaint == null) wantRepaint = Future {
-      while (adapter.frameEmpty.get == null)
+      for (i <- 1 to 1000 if adapter.frameEmpty.get == null) // 5 sec
         Thread.sleep(5) // 200 FPS max
       try JFX.exec {
         wantRepaint = null
@@ -271,6 +272,6 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
 
 object FXHost extends Loggable {
   /** FXHost thread pool that used as mediator between Java FX and SWT. */
-  val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(32))
+  val ec = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
   lazy val scene = new Scene(new Group)
 }

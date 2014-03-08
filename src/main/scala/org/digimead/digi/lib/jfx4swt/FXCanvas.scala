@@ -190,8 +190,10 @@ class FXCanvas(parent: Composite, style: Int, val bindSceneSizeToCanvas: Boolean
       try if (display != null) {
         hostWidth = x
         hostHeight = y
-        FXCanvas.this.preferredWidth = x
-        FXCanvas.this.preferredHeight = y
+        if (bindSceneSizeToCanvas) {
+          FXCanvas.this.preferredWidth = x
+          FXCanvas.this.preferredHeight = y
+        }
       } finally disposeRWL.readLock().unlock()
     }
     /**

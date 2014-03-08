@@ -93,13 +93,16 @@ class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
               var n = 0
               override def paintControl(event: PaintEvent) {
                 n += 1
+//                println(s"${hashCode()} paintControl $n")
                 super.paintControl(event)
-                if (n == 15)
+                if (n == 15) {
+                  println(s"${hashCode()} close")
                   getShell().getDisplay().asyncExec(new Runnable { def run = getShell().close() })
+                }
               }
             }
           }
-          println("Show shell with " + canvas.hashCode())
+          println("Show shell with " + canvas.adapter.get.hashCode())
           val adapter = JFX.exec {
             val chart = createChart()
             chart.setAnimated(true)
@@ -113,7 +116,7 @@ class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
               .build()
             val scene = new Scene(chart)
             canvas.setScene(scene, { stage ⇒
-              println(stage + " ready for " + canvas.hashCode())
+              println(stage + " ready for " + canvas.adapter.get.hashCode())
               fadeTransition.play()
             })
             canvas.addDisposeListener { stage ⇒

@@ -23,9 +23,10 @@ package org.digimead.digi.lib.jfx4swt
 import com.sun.glass.ui.PlatformFactory
 import com.sun.javafx.application.PlatformImpl
 import java.util.concurrent.{ ConcurrentLinkedQueue, CountDownLatch }
+import javafx.scene.paint.Color
 import org.digimead.digi.lib.api.DependencyInjection
 import org.digimead.digi.lib.log.api.Loggable
-import org.eclipse.swt.graphics.PaletteData
+import org.eclipse.swt.graphics.{ PaletteData, RGB }
 import scala.annotation.tailrec
 import scala.language.implicitConversions
 
@@ -42,6 +43,8 @@ class JFX extends Loggable {
   /** Start/stop lock. */
   protected[this] val lock = new Object
 
+  /** Get Color from RGB value. */
+  def fromRGB(rgb: RGB, opacity: Double = 1): Color = Color.rgb(rgb.red, rgb.green, rgb.blue, opacity)
   /** Start event thread. */
   def start(runnable: Runnable = new Runnable { def run {} }, priority: Int = Thread.MAX_PRIORITY) = lock.synchronized {
     if (System.getProperty("quantum.multithreaded") == null)
@@ -125,6 +128,8 @@ class JFX extends Loggable {
     thread = null
     stopLatch.await()
   }
+  /** Convert Color to RGB value. */
+  def toRGB(color: Color): RGB = new RGB((color.getRed() * 255).toInt, (color.getGreen() * 255).toInt, (color.getBlue() * 255).toInt)
 }
 
 object JFX extends jfx.Thread with Loggable {

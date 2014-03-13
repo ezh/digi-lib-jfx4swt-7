@@ -22,12 +22,12 @@ package org.digimead.digi.lib.jfx4swt
 
 import com.sun.glass.ui.PlatformFactory
 import com.sun.javafx.application.PlatformImpl
-import java.util.concurrent.{ ConcurrentLinkedQueue, CountDownLatch }
-import javafx.scene.paint.Color
+import java.util.concurrent.{ ConcurrentLinkedQueue, CountDownLatch, Executors }
 import org.digimead.digi.lib.api.DependencyInjection
 import org.digimead.digi.lib.log.api.Loggable
-import org.eclipse.swt.graphics.{ PaletteData, RGB }
+import org.eclipse.swt.graphics.PaletteData
 import scala.annotation.tailrec
+import scala.concurrent.ExecutionContext
 import scala.language.implicitConversions
 
 /**
@@ -130,6 +130,8 @@ class JFX extends Loggable {
 
 object JFX extends jfx.Thread with Loggable {
   implicit def JFX2interface(g: JFX.type): JFX = DI.implementation
+  /** FXHost thread pool that used as mediator between Java FX and SWT. */
+  val ec = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
 
   /** JFX debug flag. */
   def debug = DI.debug

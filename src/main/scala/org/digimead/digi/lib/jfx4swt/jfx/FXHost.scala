@@ -23,7 +23,6 @@ package org.digimead.digi.lib.jfx4swt.jfx
 import com.sun.javafx.embed.HostInterface
 import com.sun.javafx.tk.quantum.{ EmbeddedScene, EmbeddedStage }
 import java.nio.IntBuffer
-import java.util.concurrent.Executors
 import java.util.concurrent.locks.ReentrantLock
 import javafx.application.Platform
 import javafx.scene.{ Group, Scene }
@@ -31,7 +30,7 @@ import org.digimead.digi.lib.Disposable
 import org.digimead.digi.lib.jfx4swt.JFX
 import org.digimead.digi.lib.log.api.Loggable
 import org.eclipse.swt.SWT
-import scala.concurrent.{ ExecutionContext, Future }
+import scala.concurrent.Future
 import scala.ref.WeakReference
 
 /**
@@ -66,7 +65,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
   // It is a case of ~1-2ms or less
   @volatile private[this] final var oneMoreFramePlease = true
   private[this] var wantRepaint: Future[_] = null
-  private[this] implicit val ec = FXHost.ec
+  private[this] implicit val ec = JFX.ec
 
   def dispose() {
     disposed = true
@@ -168,7 +167,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
         }
       } finally pipeLock.unlock()
     } else if (wantRepaint == null) wantRepaint = Future {
-      for (i <- 1 to 1000 if adapter.frameEmpty.get == null) // 5 sec
+      for (i ← 1 to 1000 if adapter.frameEmpty.get == null) // 5 sec
         Thread.sleep(5) // 200 FPS max
       try JFX.exec {
         wantRepaint = null
@@ -271,7 +270,5 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
 }
 
 object FXHost extends Loggable {
-  /** FXHost thread pool that used as mediator between Java FX and SWT. */
-  val ec = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
   lazy val scene = new Scene(new Group)
 }

@@ -23,15 +23,19 @@ package org.digimead.digi.lib.jfx4swt.util
 import java.util.Random
 import javafx.animation.Interpolator
 import javafx.beans.binding.{ DoubleBinding, DoubleExpression }
+import javafx.geometry.{ BoundingBox, Bounds }
 import javafx.scene.{ Node, SnapshotParametersBuilder }
 import javafx.scene.canvas.Canvas
 import javafx.scene.image.{ Image, WritableImage }
 import javafx.scene.paint.{ Color, CycleMethod, ImagePattern, LinearGradient, Paint, Stop }
 import javafx.scene.shape.Shape
+import org.digimead.digi.lib.jfx4swt.JFX
 import org.eclipse.swt.graphics.RGB
+import scala.concurrent.{ Await, Future }
+import scala.concurrent.duration.Duration
 
 /**
- * This class based on Util.java of JFXtras
+ * Some functions of this class is based on Util.java of JFXtras
  *
  * Copyright (c) 2011-2013, JFXtras
  * All rights reserved.
@@ -59,6 +63,8 @@ import org.eclipse.swt.graphics.RGB
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 object JFXUtil {
+  private[this] implicit lazy val ec = JFX.ec
+
   lazy val SNAPSHOT_PARAMETER = {
     val builder = SnapshotParametersBuilder.create()
     builder.fill(Color.TRANSPARENT)
@@ -203,19 +209,16 @@ object JFXUtil {
     Interpolator.LINEAR.interpolate(INTERPOLATED_COLOR_X1, INTERPOLATED_COLOR_X2, FRACTION_Y).asInstanceOf[Color]
   }
 
-  def darker(COLOR: Color, FRACTION: Double): Color = {
-    val red = clamp(0, 1, COLOR.getRed() * (1.0 - FRACTION))
-    val green = clamp(0, 1, COLOR.getGreen() * (1.0 - FRACTION))
-    val blue = clamp(0, 1, COLOR.getBlue() * (1.0 - FRACTION))
-    new Color(red, green, blue, COLOR.getOpacity())
-  }
+  def darker(COLOR: Color, FRACTION: Double): Color =
+    new Color(clamp(0, 1, COLOR.getRed() * (1.0 - FRACTION)),
+      clamp(0, 1, COLOR.getGreen() * (1.0 - FRACTION)),
+      clamp(0, 1, COLOR.getBlue() * (1.0 - FRACTION)), COLOR.getOpacity())
 
-  def brighter(COLOR: Color, FRACTION: Double): Color = {
-    val red = clamp(0, 1, COLOR.getRed() * (1.0 + FRACTION))
-    val green = clamp(0, 1, COLOR.getGreen() * (1.0 + FRACTION))
-    val blue = clamp(0, 1, COLOR.getBlue() * (1.0 + FRACTION))
-    new Color(red, green, blue, COLOR.getOpacity())
-  }
+  def brighter(COLOR: Color, FRACTION: Double): Color =
+    new Color(clamp(0, 1, COLOR.getRed() * (1.0 + FRACTION)),
+      clamp(0, 1, COLOR.getGreen() * (1.0 + FRACTION)),
+      clamp(0, 1, COLOR.getBlue() * (1.0 + FRACTION)),
+      COLOR.getOpacity())
 
   def colorDistance(COLOR1: Color, COLOR2: Color): Double = {
     val DELTA_R = COLOR2.getRed() - COLOR1.getRed()
@@ -474,6 +477,92 @@ object JFXUtil {
   }
 
   // Misc utilities
+
+  /** Get bounds of the cropped image. */
+  /* For example:
+   * val bounds = getCroppedBounds(snapshot, 0.01)
+   * val bImage = SwingFXUtils.fromFXImage(snapshot, null)
+   * val imageRGB = new BufferedImage(bounds.getWidth().toInt, bounds.getHeight().toInt, Transparency.OPAQUE) // Remove alpha-channel from buffered image.
+   * val graphics = imageRGB.createGraphics()
+   * graphics.drawImage(bImage, -bounds.getMinX().toInt, -bounds.getMinY().toInt, null)
+   * graphics.dispose()
+   * ImageIO.write(imageRGB, "jpg", new File("......./image.jpg"))
+   */
+  def getCroppedBounds(source: Image, distance: Double): Bounds = {
+    // Get our top-left pixel color as our "baseline" for cropping.
+    val pixelReader = source.getPixelReader()
+    val baseColor = pixelReader.getColor(0, 0)
+    val width = source.getWidth().toInt
+    val height = source.getHeight().toInt
+
+    val matrix = new Array[Boolean](width * height)
+    for (y ← 0 until height)
+      for (x ← 0 until width)
+        matrix(width * y + x) = JFXUtil.colorDistance(baseColor, pixelReader.getColor(x, y)) < distance
+
+    // Search for topY
+    val topYF = Future {
+      var topY = 0
+      var run = true
+      val iterator = matrix.iterator
+      for (y ← 0 until height if run)
+        for (x ← 0 until width if run)
+          if (!iterator.next()) {
+            topY = y
+            run = false
+          }
+      if (run)
+        topY = height
+      topY
+    }
+    // Search for bottomY
+    val bottomYF = Future {
+      var bottomY = 0
+      var run = true
+      val iterator = matrix.reverseIterator
+      for (y ← 0 until height if run)
+        for (x ← 0 until width if run)
+          if (!iterator.next()) {
+            bottomY = height - y
+            run = false
+          }
+      if (run)
+        bottomY = width
+      bottomY
+    }
+    // Search for topX
+    val topXF = Future {
+      var topX = 0
+      var run = true
+      for (x ← 0 until width if run)
+        for (y ← 0 until height if run) {
+          if (!matrix(width * y + x)) {
+            topX = x
+            run = false
+          }
+        }
+      if (run)
+        topX = width
+      topX
+    }
+    // Search for bottomX
+    val bottomXF = Future {
+      var bottomX = 0
+      var run = true
+      for (x ← width - 1 to 0 by -1 if run)
+        for (y ← height - 1 to 0 by -1 if run)
+          if (!matrix(width * y + x)) {
+            bottomX = x + 1
+            run = false
+          }
+      if (run)
+        bottomX = height
+      bottomX
+    }
+
+    val Seq(topX, topY, bottomX, bottomY) = Await.result(Future.sequence(Seq(topXF, topYF, bottomXF, bottomYF)), Duration.Inf)
+    new BoundingBox(topX, topY, math.max(bottomX - topX, 0), math.max(bottomY - topY, 0))
+  }
 
   def getMaxSquareSizeBinding(WIDTH_PROPERTY: DoubleExpression, HEIGHT_PROPERTY: DoubleExpression): DoubleBinding = new DoubleBinding() {
     super.bind(WIDTH_PROPERTY, HEIGHT_PROPERTY)

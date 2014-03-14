@@ -20,25 +20,18 @@
 
 package org.digimead.digi.lib.jfx4swt.util
 
-import com.sun.glass.ui.Application
-import java.util.concurrent.{ CountDownLatch, TimeUnit }
-import javafx.application.Platform
+import javafx.scene.Scene
+import javafx.scene.layout.Pane
+import javafx.scene.paint.Color
+import javafx.scene.shape.Rectangle
 import org.digimead.digi.lib.DependencyInjection
+import org.digimead.digi.lib.jfx4swt.JFX
 import org.digimead.digi.lib.jfx4swt.JFX.JFX2interface
 import org.digimead.lib.test.LoggingHelper
+import org.eclipse.swt.SWT
+import org.eclipse.swt.graphics.ImageLoader
 import org.eclipse.swt.widgets.Display
 import org.scalatest.{ FreeSpec, Matchers }
-import org.digimead.digi.lib.jfx4swt.JFX
-import javafx.scene.Scene
-import javafx.scene.Group
-import javafx.scene.shape.Rectangle
-import javafx.scene.layout.Pane
-import javafx.embed.swing.SwingFXUtils
-import java.awt.image.BufferedImage
-import java.awt.Transparency
-import javax.imageio.ImageIO
-import java.io.File
-import javafx.scene.paint.Color
 
 class JFXUtilSpec extends FreeSpec with Matchers with LoggingHelper {
   lazy val config = org.digimead.digi.lib.default
@@ -131,6 +124,42 @@ class JFXUtilSpec extends FreeSpec with Matchers with LoggingHelper {
       bounds.getMinY() should be(0)
       bounds.getWidth() should be(10)
       bounds.getHeight() should be(20)
+    }
+  }
+  "toImageData should be OK" in {
+    JFX.execNGet {
+      info("alfa 0.5")
+      val rectangle = new Rectangle(1, 3)
+      rectangle.setX(1)
+      rectangle.setY(0)
+      rectangle.setFill(Color.RED)
+      rectangle.setOpacity(0.5)
+      val pane = new Pane()
+      pane.getChildren().addAll(rectangle)
+      val scene = new Scene(pane, 3, 3)
+      val snapshot = JFXUtil.takeSnapshot(pane)
+      val imageData = JFXUtil.toImageData(snapshot).get
+      imageData.alphaData should be(Array(0, -128, 0, 0, -128, 0, 0, -128, 0))
+      // val imageLoader = new ImageLoader()
+      // imageLoader.data = Array(imageData)
+      // imageLoader.save("/tmp/test.bmp", SWT.IMAGE_BMP)
+    }
+    JFX.execNGet {
+      info("without alfa")
+      val rectangle = new Rectangle(1, 3)
+      rectangle.setX(1)
+      rectangle.setY(0)
+      rectangle.setFill(Color.RED)
+      val pane = new Pane()
+      pane.getChildren().addAll(rectangle)
+      val scene = new Scene(pane, 2, 3)
+      val snapshot = JFXUtil.takeSnapshot(pane)
+      val imageData = JFXUtil.toImageData(snapshot).get
+      imageData.data should be(Array(0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 0, -1, -1))
+      imageData.alphaData should be(Array(0, -1, 0, -1, 0, -1))
+      // val imageLoader = new ImageLoader()
+      // imageLoader.data = Array(imageData)
+      // imageLoader.save("/tmp/test.bmp", SWT.IMAGE_BMP)
     }
   }
 

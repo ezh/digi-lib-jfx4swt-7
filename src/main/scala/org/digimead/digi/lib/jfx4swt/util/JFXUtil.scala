@@ -26,11 +26,11 @@ import javafx.beans.binding.{ DoubleBinding, DoubleExpression }
 import javafx.geometry.{ BoundingBox, Bounds }
 import javafx.scene.{ Node, SnapshotParametersBuilder }
 import javafx.scene.canvas.Canvas
-import javafx.scene.image.{ Image, WritableImage }
+import javafx.scene.image.{ Image, PixelFormat, WritableImage }
 import javafx.scene.paint.{ Color, CycleMethod, ImagePattern, LinearGradient, Paint, Stop }
 import javafx.scene.shape.Shape
 import org.digimead.digi.lib.jfx4swt.JFX
-import org.eclipse.swt.graphics.RGB
+import org.eclipse.swt.graphics.{ ImageData, RGB }
 import scala.concurrent.{ Await, Future }
 import scala.concurrent.duration.Duration
 
@@ -235,11 +235,35 @@ object JFXUtil {
 
   def isBright(COLOR: Color): Boolean = !isDark(COLOR)
 
-  // Snapshot related utilities
+  // Image related utilities
 
+  /** Take snapshot from the node. */
   def takeSnapshot(NODE: Node): Image = {
     val img = new WritableImage(NODE.getLayoutBounds().getWidth().toInt, NODE.getLayoutBounds().getHeight().toInt)
     NODE.snapshot(SNAPSHOT_PARAMETER, img)
+  }
+
+  /** Convert JavaFX image to SWT ImageDate. */
+  def toImageData(image: Image): Option[ImageData] = Option(image.getPixelReader()).map { reader ⇒
+    val width = image.getWidth().toInt
+    val height = image.getHeight().toInt
+    val scanline = width * 4
+    val data = new Array[Byte](scanline * height)
+    val pf = PixelFormat.getByteBgraInstance()
+    reader.getPixels(0, 0, width, height, pf, data, 0, scanline)
+    val alphaData = new Array[Byte](width * height)
+    var offset = 0
+    var alphaOffset = 0
+    for (y ← 0 until height) {
+      for (x ← 0 until width) {
+        alphaData(alphaOffset) = data(offset + 3)
+        offset += 4
+        alphaOffset += 1
+      }
+    }
+    val imageData = new ImageData(width, height, 32, JFX.paletteData, 4, data)
+    imageData.alphaData = alphaData
+    imageData
   }
 
   // Image pattern related utilities

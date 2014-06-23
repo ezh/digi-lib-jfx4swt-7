@@ -1,5 +1,5 @@
 /**
- * JFX4SWT - JavaFX library adapter for SWT framework.
+ * JFX4SWT-7 - Java 7 JavaFX library adapter for SWT framework.
  *
  * Copyright (c) 2014 Alexey Aksenov ezh@ezh.msk.ru
  * All rights reserved.
@@ -20,59 +20,24 @@
 
 package org.digimead.digi.lib.jfx4swt.jfx
 
-import com.sun.javafx.tk.{ TKStage, Toolkit }
-import javafx.application.Platform
+import com.sun.javafx.tk.Toolkit
 import javafx.scene.Scene
-import org.digimead.digi.lib.Disposable
 import org.digimead.digi.lib.jfx4swt.JFX
-import org.digimead.digi.lib.log.api.Loggable
 import scala.ref.WeakReference
 
-class JFaceCanvas(host: WeakReference[FXHost]) extends javafx.stage.Window {
-  @volatile protected var disposed = false
-
-  /**
-   * Close embedded frame.
-   *
-   * @param runnable run after close
-   */
-  def close(onDispose: JFaceCanvas ⇒ _) {
-    if (disposed)
-      throw new IllegalStateException(s"$this is disposed.")
-    if (Platform.isFxApplicationThread())
-      closeExec(onDispose)
-    else
-      JFX.exec { closeExec(onDispose) }
-    disposed = true
-  }
-  /**
-   * Open embedded frame.
-   *
-   * @param scene scene to render
-   * @param runnable run after open
-   */
-  def open(scene: Scene, onReady: JFaceCanvas ⇒ _) {
-    if (disposed)
-      throw new IllegalStateException(s"$this is disposed.")
-    if (Platform.isFxApplicationThread())
-      openExec(scene, onReady)
-    else
-      JFX.exec { openExec(scene, onReady) }
-  }
-
+class JFaceCanvas7(host: WeakReference[FXHost]) extends JFaceCanvas(host) {
   /** Execute close sequence within Java FX thread. */
+  @SuppressWarnings(Array("deprecation"))
   protected def closeExec(onDispose: JFaceCanvas ⇒ _) = {
-    @deprecated("", "") def hide_warning_for_impl_peer_get = impl_peer
-    @deprecated("", "") def hide_warning_for_impl_peer_set(arg: TKStage) = impl_peer = arg
-    val embeddedStage = hide_warning_for_impl_peer_get
+    val embeddedStage = impl_peer
     hide()
     if (embeddedStage != null) {
       embeddedStage.setVisible(false)
       embeddedStage.setScene(null)
       embeddedStage.close()
     }
-    host.get.foreach(_.dispose())
-    hide_warning_for_impl_peer_set(null)
+    host.get.foreach(_.asInstanceOf[FXHost7].dispose())
+    impl_peer = null
     JFX.execAsync {
       try onDispose(this)
       catch { case e: Throwable ⇒ JFaceCanvas.log.error("onDispose callback failed." + e.getMessage(), e) }
@@ -80,22 +45,19 @@ class JFaceCanvas(host: WeakReference[FXHost]) extends javafx.stage.Window {
   }
   /** Execute open sequence within Java FX thread. */
   protected def openExec(scene: Scene, onReady: JFaceCanvas ⇒ _) = {
-    @deprecated("", "") def hide_warning_for_impl_peer_set(arg: TKStage) = impl_peer = arg
-    host.get.foreach(_.setScene(scene))
+    host.get.foreach(_.asInstanceOf[FXHost7].setScene(scene))
     if (getScene() == null) {
       setScene(scene)
-      host.get.foreach(host ⇒ hide_warning_for_impl_peer_set(Toolkit.getToolkit.createTKEmbeddedStage(host)))
+      host.get.foreach(host ⇒ impl_peer = Toolkit.getToolkit.createTKEmbeddedStage(host))
       show()
     } else {
       setScene(scene)
     }
     JFX.execAsync {
       // Some times embedded content freeze at the beginning.
-      host.get.foreach(_.embeddedScene.foreach { _.entireSceneNeedsRepaint() })
+      host.get.foreach(_.asInstanceOf[FXHost7].embeddedScene.foreach { _.entireSceneNeedsRepaint() })
       try onReady(this)
       catch { case e: Throwable ⇒ JFaceCanvas.log.error("onReady callback failed." + e.getMessage(), e) }
     }
   }
 }
-
-object JFaceCanvas extends Loggable

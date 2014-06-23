@@ -1,5 +1,5 @@
 /**
- * JFX4SWT - JavaFX library adapter for SWT framework.
+ * JFX4SWT-7 - Java 7 JavaFX library adapter for SWT framework.
  *
  * Copyright (c) 2014 Alexey Aksenov ezh@ezh.msk.ru
  * All rights reserved.
@@ -28,7 +28,6 @@ import javafx.application.Platform
 import javafx.scene.{ Group, Scene }
 import org.digimead.digi.lib.Disposable
 import org.digimead.digi.lib.jfx4swt.JFX
-import org.digimead.digi.lib.log.api.Loggable
 import org.eclipse.swt.SWT
 import scala.concurrent.Future
 import scala.ref.WeakReference
@@ -45,7 +44,7 @@ import scala.ref.WeakReference
  * val stage = new FXEmbedded(host)
  * stage.open(scene)
  */
-class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
+class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
   private[this] final var dataToConvert = 0
   private[this] final var destinationPointer = 0
   private[this] final var height = SWT.DEFAULT
@@ -169,7 +168,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
     } else if (wantRepaint == null) wantRepaint = Future {
       for (i ← 1 to 1000 if adapter.frameEmpty.get == null) // 5 sec
         Thread.sleep(5) // 200 FPS max
-      try JFX.exec {
+      JFX.exec {
         wantRepaint = null
         repaint()
         Future { embeddedScene.foreach(_.entireSceneNeedsRepaint()) }
@@ -177,6 +176,7 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
     }
   }
   def requestFocus(): Boolean = if (disposed) false else adapter.get.map(_.requestFocus()).getOrElse(false)
+  def sceneNeedsRepaint() = embeddedScene.foreach { _.entireSceneNeedsRepaint() }
   def setCursor(cursorFrame: com.sun.javafx.cursor.CursorFrame) {}
   def setEmbeddedScene(scene: com.sun.javafx.embed.EmbeddedSceneInterface) {
     if (scene == null && disposed)
@@ -267,8 +267,4 @@ class FXHost(adapter: WeakReference[FXAdapter]) extends HostInterface {
     stage.setTKStageListener(null)
     JFX.execAsync { Disposable.clean(stage) }
   }
-}
-
-object FXHost extends Loggable {
-  lazy val scene = new Scene(new Group)
 }

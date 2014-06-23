@@ -1,5 +1,5 @@
 /**
- * JFX4SWT - JavaFX library adapter for SWT framework.
+ * JFX4SWT-7 - Java 7 JavaFX library adapter for SWT framework.
  *
  * Copyright (c) 2014 Alexey Aksenov ezh@ezh.msk.ru
  * All rights reserved.

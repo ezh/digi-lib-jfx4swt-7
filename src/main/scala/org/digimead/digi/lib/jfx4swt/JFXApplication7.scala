@@ -1,5 +1,5 @@
 /**
- * JFX4SWT - JavaFX library adapter for SWT framework.
+ * JFX4SWT-7 - Java 7 JavaFX library adapter for SWT framework.
  *
  * Copyright (c) 2014 Alexey Aksenov ezh@ezh.msk.ru
  * All rights reserved.
@@ -20,31 +20,30 @@
 
 package org.digimead.digi.lib.jfx4swt
 
-import com.sun.glass.ui
 import com.sun.glass.ui.{ Cursor, Launchable, Pen, Pixels, Screen, Size, View, Window }
 import com.sun.glass.ui.CommonDialogs.ExtensionFilter
 import java.lang.ref.WeakReference
-import java.lang.reflect.InvocationTargetException
 import java.nio.{ ByteBuffer, IntBuffer }
 import java.util.TimerTask
-import java.util.concurrent.{ CountDownLatch, Exchanger, TimeUnit }
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicReference
-import org.digimead.digi.lib.api.DependencyInjection
-import org.eclipse.swt.graphics.Point
-import org.eclipse.swt.widgets.Display
+import org.digimead.digi.lib.jfx4swt.JFX.JFX2interface
+import org.digimead.digi.lib.jfx4swt.jfx.{ FXAdapter, FXHost, FXHost7, JFaceCanvas, JFaceCanvas7 }
 import scala.language.implicitConversions
 
 /**
  * JFX4SWT adapter application.
  */
-class JFXApplication extends com.sun.glass.ui.Application {
+class JFXApplication7 extends JFXApplication {
   def createCursor(t: Int): Cursor = ???
   def createCursor(x: Int, y: Int, pixels: Pixels): Cursor = ???
+  def createHost(adapter: FXAdapter): FXHost = new FXHost7(ref.WeakReference(adapter))
+  def createJFaceCanvas(host: FXHost): JFaceCanvas = new JFaceCanvas7(ref.WeakReference(host))
   def createPixels(width: Int, height: Int, data: ByteBuffer): Pixels = ???
   def createPixels(width: Int, height: Int, data: IntBuffer): Pixels = ???
   def createPixels(width: Int, height: Int, data: IntBuffer, scale: Float): Pixels = ???
   def createRobot(): com.sun.glass.ui.Robot = ???
-  def createTimer(runnable: Runnable) = new JFXApplication.Timer(runnable)
+  def createTimer(runnable: Runnable) = new JFXApplication7.Timer(runnable)
   def createView(pen: Pen): View = new jfx.View(pen)
   def createWindow(owner: Window, screen: Screen, styleMask: Int): Window = new jfx.Window(owner, screen, styleMask)
   def createWindow(parent: Long): Window = ???
@@ -76,7 +75,10 @@ class JFXApplication extends com.sun.glass.ui.Application {
   protected def runLoop(args: Array[String], launchable: Launchable) {
     JFX.offer(new Runnable {
       def run {
-        setEventThread(Thread.currentThread())
+        if (getEventThread() == null)
+          setEventThread(Thread.currentThread())
+        if (getEventThread() != Thread.currentThread())
+          throw new IllegalStateException(s"Unexpected event thread ${getEventThread()} vs current ${Thread.currentThread()}")
         launchable.finishLaunching(args)
       }
     })
@@ -108,51 +110,11 @@ class JFXApplication extends com.sun.glass.ui.Application {
   protected def staticView_getMultiClickTime(): Long = ???
 }
 
-object JFXApplication {
-  /** Application virtual screen. */
-  lazy val virtualScreen = DI.virtualScreenBuilder()
+object JFXApplication7 {
   /** Single application timer. */
   private lazy val timer: java.util.Timer = new java.util.Timer(true)
 
-  /** Build virtual screen. */
-  class VirtualScreenBuilder extends Function0[Screen] {
-    def apply() = try {
-      val screenConstructor = classOf[Screen].getDeclaredConstructor(
-        java.lang.Long.TYPE, java.lang.Integer.TYPE, java.lang.Integer.TYPE, java.lang.Integer.TYPE,
-        java.lang.Integer.TYPE, java.lang.Integer.TYPE, java.lang.Integer.TYPE, java.lang.Integer.TYPE,
-        java.lang.Integer.TYPE, java.lang.Integer.TYPE, java.lang.Integer.TYPE, java.lang.Integer.TYPE,
-        java.lang.Float.TYPE)
-      if (!screenConstructor.isAccessible())
-        screenConstructor.setAccessible(true)
-      val display = Display.getDefault()
-      val exchanger = new Exchanger[(Int, Point)]()
-      display.asyncExec(new Runnable {
-        def run = exchanger.exchange((Display.getDefault().getDepth(), Display.getDefault().getDPI()),
-          100, TimeUnit.MILLISECONDS)
-      })
-      val (depth, dpi) = exchanger.exchange(null)
-      val nativePtr: java.lang.Long = 1
-      val x: java.lang.Integer = 0
-      val y: java.lang.Integer = 0
-      val width: java.lang.Integer = 4096
-      val height: java.lang.Integer = 4096
-      val visibleX: java.lang.Integer = 0
-      val visibleY: java.lang.Integer = 0
-      val visibleWidth: java.lang.Integer = 4096
-      val visibleHeight: java.lang.Integer = 4096
-      val resolutionX: java.lang.Integer = dpi.x
-      val resolutionY: java.lang.Integer = dpi.y
-      val scale: java.lang.Float = 1
-      screenConstructor.newInstance(nativePtr, depth: java.lang.Integer, x, y, width, height,
-        visibleX, visibleY, visibleWidth, visibleHeight, resolutionX, resolutionY, scale)
-    } catch {
-      case e: NoSuchMethodException ⇒ throw new RuntimeException("Unable to construct a Screen", e);
-      case e: InvocationTargetException ⇒ throw new RuntimeException("Unable to construct a Screen", e);
-      case e: InstantiationException ⇒ throw new RuntimeException("Unable to construct a Screen", e);
-      case e: IllegalAccessException ⇒ throw new RuntimeException("Unable to construct a Screen", e);
-    }
-  }
-  class Timer(runnable: Runnable) extends ui.Timer(runnable) {
+  class Timer(runnable: Runnable) extends com.sun.glass.ui.Timer(runnable) {
     private val task = new AtomicReference[java.util.TimerTask]()
 
     protected def _start(runnable: Runnable, period: Int) = {
@@ -177,12 +139,5 @@ object JFXApplication {
           container.task.compareAndSet(this, null)
       }
     }
-  }
-  /**
-   * Dependency injection routines.
-   */
-  private object DI extends DependencyInjection.PersistentInjectable {
-    /** JFX virtual screen builder. */
-    lazy val virtualScreenBuilder = injectOptional[VirtualScreenBuilder] getOrElse new VirtualScreenBuilder
   }
 }

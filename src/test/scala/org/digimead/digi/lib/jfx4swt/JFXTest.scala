@@ -1,5 +1,5 @@
 /**
- * JFX4SWT - JavaFX library adapter for SWT framework.
+ * JFX4SWT-7 - Java 7 JavaFX library adapter for SWT framework.
  *
  * Copyright (c) 2014 Alexey Aksenov ezh@ezh.msk.ru
  * All rights reserved.
@@ -26,17 +26,16 @@ import javafx.scene.Scene
 import javafx.scene.chart.{ NumberAxis, StackedAreaChart, XYChart }
 import org.digimead.digi.lib.DependencyInjection
 import org.digimead.digi.lib.jfx4swt.JFX.JFX2interface
+import org.digimead.digi.lib.jfx4swt.jfx.{ FXAdapter, FXHost7 }
 import org.digimead.lib.test.LoggingHelper
 import org.eclipse.swt.widgets.Display
 import org.mockito.Matchers.anyBoolean
 import org.mockito.Mockito.{ spy, timeout, verify }
 import org.scalatest.{ FreeSpec, Matchers }
-import org.digimead.digi.lib.jfx4swt.jfx.FXAdapter
-import org.digimead.digi.lib.jfx4swt.jfx.FXHost
 import scala.ref.WeakReference
 
 class JFXTest extends FreeSpec with Matchers with LoggingHelper {
-  lazy val config = org.digimead.digi.lib.default
+  lazy val config = org.digimead.digi.lib.default ~ org.digimead.digi.lib.jfx4swt.default
   val chartSeries = new XYChart.Series[Number, Number]()
   val thread = new Thread {
     setDaemon(true)
@@ -55,7 +54,7 @@ class JFXTest extends FreeSpec with Matchers with LoggingHelper {
       chart.setAnimated(false)
       val scene = new Scene(chart, 800, 600)
       val adapter = spy(new TestAdapter)
-      val host = new FXHost(WeakReference(adapter))
+      val host = new FXHost7(WeakReference(adapter))
       val stage = new EmbeddedWindow(host)
       stage.show()
       stage.setScene(scene)

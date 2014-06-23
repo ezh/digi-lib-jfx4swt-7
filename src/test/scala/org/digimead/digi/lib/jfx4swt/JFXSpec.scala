@@ -1,5 +1,5 @@
 /**
- * JFX4SWT - JavaFX library adapter for SWT framework.
+ * JFX4SWT-7 - Java 7 JavaFX library adapter for SWT framework.
  *
  * Copyright (c) 2014 Alexey Aksenov ezh@ezh.msk.ru
  * All rights reserved.
@@ -30,7 +30,7 @@ import org.eclipse.swt.widgets.Display
 import org.scalatest.{ FreeSpec, Matchers }
 
 class JFXSpec extends FreeSpec with Matchers with LoggingHelper {
-  lazy val config = org.digimead.digi.lib.default
+  lazy val config = org.digimead.digi.lib.default ~ org.digimead.digi.lib.jfx4swt.default
   val thread = new Thread {
     setDaemon(true)
     setName("SWT")

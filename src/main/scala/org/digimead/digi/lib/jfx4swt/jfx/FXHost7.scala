@@ -54,7 +54,6 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
   private[this] final var sourcePointer = 0
   @volatile private[this] final var stage: EmbeddedStage = null
   private[this] final var width = SWT.DEFAULT
-  private[this] final var repaintLastToDraw: Array[Byte] = null
   private[this] final var pipeBuf: Array[Int] = null
   private[this] final val pipeLock = new ReentrantLock()
   @volatile private[this] var disposed = false
@@ -80,7 +79,6 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
         rawPixelsBuf = null
         rawPixelsBufArray = null
         pipeBuf = null
-        repaintLastToDraw = null
         height = SWT.DEFAULT
         width = SWT.DEFAULT
         userScene = null
@@ -98,17 +96,14 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
     if (rawPixelsBuf == null || scene == null || disposed)
       return
     // 1. We want empty frame to draw.
-    repaintLastToDraw = adapter.frameEmpty.getAndSet(null)
-    if (repaintLastToDraw != null && pipeLock.tryLock()) {
+    val toDraw = adapter.frameEmpty.getAndSet(null)
+    val toDrawHeight = height
+    val toDrawWidth = width
+    if (toDraw != null && pipeLock.tryLock()) {
       try {
         if (scene.getPixels(rawPixelsBuf, width, height)) {
           if (!oneMoreFramePlease) {
             System.arraycopy(rawPixelsBufArray, 0, pipeBuf, 0, rawPixelsBufArray.length)
-            // We must assign mutable pointer to immutable value
-            // since next iteration will set it to 'null'
-            // right in the middle of the Future
-            // and there will be NPE
-            val toDraw = repaintLastToDraw
             // IMHO This is the best of the worst
             // It is not block event thread while large frame processing ~-20ms
             // Future allow reduce process time to 1-5ms vs 15-25ms
@@ -118,8 +113,8 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
               try {
                 destinationPointer = 0
                 sourcePointer = 0
-                for (y ← 0 until height) {
-                  for (x ← 0 until width) {
+                for (y ← 0 until toDrawHeight) {
+                  for (x ← 0 until toDrawWidth) {
                     dataToConvert = pipeBuf(sourcePointer)
                     sourcePointer += 1
                     toDraw(destinationPointer) = (dataToConvert & 0xFF).asInstanceOf[Byte] //dst:blue
@@ -141,8 +136,8 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
                 }
               } catch {
                 case e: ArrayIndexOutOfBoundsException ⇒
-                  adapter.frameEmpty.set(repaintLastToDraw)
-                  scene.entireSceneNeedsRepaint()
+                  adapter.frameEmpty.set(toDraw)
+                  sceneNeedsRepaint
                 case e: Throwable ⇒
                   FXHost.log.error("FXHost pipe. " + e.getMessage(), e)
               } finally pipeLock.unlock()
@@ -155,14 +150,14 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
                   scene.setSize(width, height)
                   stage.setSize(width, height)
                 }
-                scene.entireSceneNeedsRepaint()
+                sceneNeedsRepaint
               }
             }
-            adapter.frameEmpty.set(repaintLastToDraw)
+            adapter.frameEmpty.set(toDraw)
           }
         } else {
           // Fail. Put empty frame back.
-          adapter.frameEmpty.set(repaintLastToDraw)
+          adapter.frameEmpty.set(toDraw)
         }
       } finally pipeLock.unlock()
     } else if (wantRepaint == null) wantRepaint = Future {
@@ -171,7 +166,7 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
       JFX.exec {
         wantRepaint = null
         repaint()
-        Future { embeddedScene.foreach(_.entireSceneNeedsRepaint()) }
+        Future { sceneNeedsRepaint }
       }
     }
   }
@@ -256,7 +251,6 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
     scene.setTKScenePaintListener(null)
     scene.markDirty()
     scene.sceneChanged()
-    Disposable.clean(scene) // there is circular references
   }
   /** Dispose embedded stage. */
   protected def disposeEmbeddedStage() {

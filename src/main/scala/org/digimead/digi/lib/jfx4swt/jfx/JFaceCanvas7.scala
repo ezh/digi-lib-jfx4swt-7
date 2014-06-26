@@ -22,42 +22,54 @@ package org.digimead.digi.lib.jfx4swt.jfx
 
 import com.sun.javafx.tk.Toolkit
 import javafx.scene.Scene
+import org.digimead.digi.lib.Disposable
 import org.digimead.digi.lib.jfx4swt.JFX
 import scala.ref.WeakReference
 
 class JFaceCanvas7(host: WeakReference[FXHost]) extends JFaceCanvas(host) {
+  protected val lock = new Object
   /** Execute close sequence within Java FX thread. */
   @SuppressWarnings(Array("deprecation"))
-  protected def closeExec(onDispose: JFaceCanvas ⇒ _) = {
-    val embeddedStage = impl_peer
-    hide()
-    if (embeddedStage != null) {
-      embeddedStage.setVisible(false)
-      embeddedStage.setScene(null)
-      embeddedStage.close()
-    }
-    host.get.foreach(_.asInstanceOf[FXHost7].dispose())
-    impl_peer = null
-    JFX.execAsync {
-      try onDispose(this)
-      catch { case e: Throwable ⇒ JFaceCanvas.log.error("onDispose callback failed." + e.getMessage(), e) }
+  protected def closeExec(onDispose: JFaceCanvas ⇒ _) = JFX.execAsync {
+    lock.synchronized {
+      val embeddedStage = impl_peer
+      val embeddedScene = getScene().impl_getPeer()
+      hide()
+      if (embeddedStage != null) {
+        embeddedStage.setVisible(false)
+        embeddedStage.setScene(null)
+        embeddedStage.close()
+      }
+      host.get.foreach(_.asInstanceOf[FXHost7].dispose())
+      impl_peer = null
+      JFX.execAsync {
+        // There are circular references that ignored by GC
+        if (embeddedStage != null)
+          Disposable.clean(embeddedStage)
+        if (embeddedScene != null)
+          Disposable.clean(embeddedScene)
+        try onDispose(this)
+        catch { case e: Throwable ⇒ JFaceCanvas.log.error("onDispose callback failed." + e.getMessage(), e) }
+      }
     }
   }
   /** Execute open sequence within Java FX thread. */
-  protected def openExec(scene: Scene, onReady: JFaceCanvas ⇒ _) = {
-    host.get.foreach(_.asInstanceOf[FXHost7].setScene(scene))
-    if (getScene() == null) {
-      setScene(scene)
-      host.get.foreach(host ⇒ impl_peer = Toolkit.getToolkit.createTKEmbeddedStage(host))
+  protected def openExec(scene: Scene, onReady: JFaceCanvas ⇒ _) = JFX.execAsync {
+    lock.synchronized {
+      host.get.foreach(_.asInstanceOf[FXHost7].setScene(scene))
+      if (getScene() == null) {
+        setScene(scene)
+        host.get.foreach(host ⇒ { impl_peer = Toolkit.getToolkit.createTKEmbeddedStage(host) })
+      } else {
+        setScene(scene)
+      }
       show()
-    } else {
-      setScene(scene)
-    }
-    JFX.execAsync {
-      // Some times embedded content freeze at the beginning.
-      host.get.foreach(_.asInstanceOf[FXHost7].embeddedScene.foreach { _.entireSceneNeedsRepaint() })
-      try onReady(this)
-      catch { case e: Throwable ⇒ JFaceCanvas.log.error("onReady callback failed." + e.getMessage(), e) }
+      JFX.execAsync {
+        // Some times embedded content freeze at the beginning.
+        lock.synchronized { host.get.foreach(_.asInstanceOf[FXHost7].embeddedScene.foreach { _.entireSceneNeedsRepaint() }) }
+        try onReady(this)
+        catch { case e: Throwable ⇒ JFaceCanvas.log.error("onReady callback failed." + e.getMessage(), e) }
+      }
     }
   }
 }

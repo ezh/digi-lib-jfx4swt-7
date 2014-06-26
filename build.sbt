@@ -82,7 +82,7 @@ libraryDependencies ++= {
   Seq(
     "org.eclipse.swt" % artifact % "4.2.1" % "compileonly",
     "org.eclipse.swt" % artifact % "4.2.1" % "test",
-    "org.digimead" %% "digi-lib-jfx4swt" % "0.1.0.0-SNAPSHOT",
+    "org.digimead" %% "digi-lib-jfx4swt" % "0.1.0.1-SNAPSHOT",
     "org.digimead" %% "digi-lib-test" % "0.3.0.0-SNAPSHOT" % "test"
   )
 }

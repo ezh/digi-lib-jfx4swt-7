@@ -91,99 +91,99 @@ class FXHost7(adapter: WeakReference[FXAdapter]) extends FXHost(adapter) {
   def embeddedScene = Option(scene)
   def embeddedStage = Option(stage)
   def repaint(): Unit = for {
-    adapter ← adapter.get
-  } {
-    if (rawPixelsBuf == null || scene == null || disposed)
-      return
-    if (pipeLock.tryLock()) {
-      // We want empty frame to draw.
-      val toDraw = adapter.frameEmpty.getAndSet(null)
-      val toDrawWidth = width
-      val toDrawHeight = height
-      try {
-        if (!oneMoreFramePlease) {
-          if (toDraw != null && toDrawWidth > 0 && toDrawHeight > 0) {
-            if (scene.getPixels(rawPixelsBuf, toDrawWidth, toDrawHeight)) {
-              System.arraycopy(rawPixelsBufArray, 0, pipeBuf, 0, rawPixelsBufArray.length)
-              // IMHO This is the best of the worst
-              // It is not block event thread while large frame processing ~-20ms
-              // Future allow reduce process time to 1-5ms vs 15-25ms
-              Future { // Memory overhead is minimal.
-                // 2. Convert pixelsBuf to imageData and save it to empty frame.
-                pipeLock.lock()
-                try {
-                  destinationPointer = 0
-                  sourcePointer = 0
-                  for (y ← 0 until toDrawHeight) {
-                    for (x ← 0 until toDrawWidth) {
-                      dataToConvert = pipeBuf(sourcePointer)
-                      sourcePointer += 1
-                      toDraw(destinationPointer) = (dataToConvert & 0xFF).asInstanceOf[Byte] //dst:blue
-                      destinationPointer += 1
-                      toDraw(destinationPointer) = ((dataToConvert >> 8) & 0xFF).asInstanceOf[Byte] //dst:green
-                      destinationPointer += 1
-                      toDraw(destinationPointer) = ((dataToConvert >> 16) & 0xFF).asInstanceOf[Byte] //dst:green
-                      destinationPointer += 1
-                      toDraw(destinationPointer) = 0 //alpha
-                      destinationPointer += 1
-                    }
+    adapter ← adapter.get if (scene != null && !disposed)
+  } if (pipeLock.tryLock()) {
+    // We want empty frame to draw.
+    val toDraw = adapter.frameEmpty.getAndSet(null)
+    val toDrawWidth = width
+    val toDrawHeight = height
+    try {
+      if (!oneMoreFramePlease) {
+        if (toDraw != null && toDrawWidth > 0 && toDrawHeight > 0) {
+          if (scene.getPixels(rawPixelsBuf, toDrawWidth, toDrawHeight)) {
+            System.arraycopy(rawPixelsBufArray, 0, pipeBuf, 0, rawPixelsBufArray.length)
+            // IMHO This is the best of the worst
+            // It is not block event thread while large frame processing ~-20ms
+            // Future allow reduce process time to 1-5ms vs 15-25ms
+
+            // IMPORTANT
+            // There may be 'dispose' between 'repaint' and 'Future'
+            Future { // Memory overhead is minimal.
+              // 2. Convert pixelsBuf to imageData and save it to empty frame.
+              pipeLock.lock()
+              if (!disposed) try {
+                destinationPointer = 0
+                sourcePointer = 0
+                for (y ← 0 until toDrawHeight) {
+                  for (x ← 0 until toDrawWidth) {
+                    dataToConvert = pipeBuf(sourcePointer)
+                    sourcePointer += 1
+                    toDraw(destinationPointer) = (dataToConvert & 0xFF).asInstanceOf[Byte] //dst:blue
+                    destinationPointer += 1
+                    toDraw(destinationPointer) = ((dataToConvert >> 8) & 0xFF).asInstanceOf[Byte] //dst:green
+                    destinationPointer += 1
+                    toDraw(destinationPointer) = ((dataToConvert >> 16) & 0xFF).asInstanceOf[Byte] //dst:green
+                    destinationPointer += 1
+                    toDraw(destinationPointer) = 0 //alpha
+                    destinationPointer += 1
                   }
-                  if (adapter.frameFull.compareAndSet(null, toDraw)) {
-                    // Full frame are ready for new chunk
-                    adapter.redraw()
-                  } else {
-                    // Fail. Put an empty frame back.
-                    adapter.frameEmpty.set(toDraw)
-                  }
-                } catch {
-                  case e: ArrayIndexOutOfBoundsException ⇒
-                    adapter.frameEmpty.set(toDraw)
-                    sceneNeedsRepaint
-                  case e: Throwable ⇒
-                    adapter.frameEmpty.set(toDraw)
-                    FXHost.log.error("FXHost pipe. " + e.getMessage(), e)
-                } finally pipeLock.unlock()
+                }
+                if (adapter.frameFull.compareAndSet(null, toDraw)) {
+                  // Full frame are ready for new chunk
+                  adapter.redraw()
+                } else {
+                  // Fail. Put an empty frame back.
+                  adapter.frameEmpty.set(toDraw)
+                }
+              } catch {
+                case e: ArrayIndexOutOfBoundsException ⇒
+                  adapter.frameEmpty.set(toDraw)
+                  sceneNeedsRepaint
+                case e: Throwable ⇒
+                  adapter.frameEmpty.set(toDraw)
+                  FXHost.log.error("FXHost pipe. " + e.getMessage(), e)
               }
-            } else {
-              // Fail. Put an empty frame back.
-              adapter.frameEmpty.set(toDraw)
+              pipeLock.unlock()
             }
           } else {
-            if (toDraw != null)
-              // Ok. But put an empty frame back.
-              adapter.frameEmpty.set(toDraw)
-            if (wantRepaint == null) wantRepaint = Future {
-              // toDraw == null, so adapter.frameEmpty.set(toDraw) isn't required
-              for (i ← 1 to 1000 if adapter.frameEmpty.get == null) // 5 msec
-                Thread.sleep(5) // 200 FPS max
-              JFX.execAsync {
-                wantRepaint = null
-                repaint()
-                sceneNeedsRepaint
-              }
-            }
+            // Fail. Put an empty frame back.
+            adapter.frameEmpty.set(toDraw)
           }
         } else {
-          oneMoreFramePlease = false
           if (toDraw != null)
+            // Ok. But put an empty frame back.
             adapter.frameEmpty.set(toDraw)
-          JFX.execAsync { // Required
-            if (scene != null && stage != null) {
-              if (toDrawWidth > 0 && toDrawHeight > 0) {
-                scene.setSize(toDrawWidth, toDrawHeight)
-                stage.setSize(toDrawWidth, toDrawHeight)
-              }
+          if (wantRepaint == null) wantRepaint = Future {
+            // toDraw == null, so adapter.frameEmpty.set(toDraw) isn't required
+            for (i ← 1 to 1000 if adapter.frameEmpty.get == null) // 5 msec
+              Thread.sleep(5) // 200 FPS max
+            JFX.execAsync {
+              wantRepaint = null
+              repaint()
               sceneNeedsRepaint
             }
           }
         }
-      } catch {
-        case e: Throwable ⇒
-          if (toDraw != null)
-            adapter.frameEmpty.set(toDraw)
-          FXHost.log.error("FXHost pipe. " + e.getMessage(), e)
-      } finally pipeLock.unlock()
-    }
+      } else {
+        oneMoreFramePlease = false
+        if (toDraw != null)
+          adapter.frameEmpty.set(toDraw)
+        JFX.execAsync { // Required
+          if (scene != null && stage != null) {
+            if (toDrawWidth > 0 && toDrawHeight > 0) {
+              scene.setSize(toDrawWidth, toDrawHeight)
+              stage.setSize(toDrawWidth, toDrawHeight)
+            }
+            sceneNeedsRepaint
+          }
+        }
+      }
+    } catch {
+      case e: Throwable ⇒
+        if (toDraw != null)
+          adapter.frameEmpty.set(toDraw)
+        FXHost.log.error("FXHost pipe. " + e.getMessage(), e)
+    } finally pipeLock.unlock()
   }
   def requestFocus(): Boolean = if (disposed) false else adapter.get.map(_.requestFocus()).getOrElse(false)
   def sceneNeedsRepaint() = embeddedScene.foreach { _.entireSceneNeedsRepaint() }

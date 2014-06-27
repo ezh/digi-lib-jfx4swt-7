@@ -21,9 +21,10 @@
 package org.digimead.digi.lib
 
 import com.escalatesoft.subcut.inject.NewBindingModule
+import org.digimead.digi.lib.jfx4swt.api.XApplication
 
 package object jfx4swt {
   lazy val default = new NewBindingModule(module ⇒ {
-    module.bind[JFXApplication] toSingle { new JFXApplication7 }
+    module.bind[XApplication] toSingle { new JFXApplication7 }
   })
 }

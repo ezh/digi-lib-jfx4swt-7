@@ -41,7 +41,9 @@ inConfig(OSGiConf)({
         osgiBndBundleCopyright := "Copyright © 2014 Alexey B. Aksenov/Ezh. All rights reserved.",
         osgiBndBundleLicense := "http://www.gnu.org/licenses/lgpl-3.0.txt;description=GNU Lesser General Public License, Version 3.0",
         osgiBndExportPackage := List("org.digimead.digi.lib.*"),
-        osgiBndPrivatePackage := List())
+        osgiBndImportPackage := List("!org.aspectj.*", "*"),
+        osgiBndPrivatePackage := List(),
+        osgiBndBundleFragmentHost := "org.digimead.lib.swt4jfx")
 })
 
 crossScalaVersions := Seq("2.11.1")

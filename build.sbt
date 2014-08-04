@@ -44,7 +44,7 @@ inConfig(OSGiConf)({
         osgiBndImportPackage := List("!org.aspectj.*", "*"),
         osgiBndPrivatePackage := List(),
         osgiBndBundleFragmentHost := "org.digimead.lib.swt4jfx",
-        osgiBndRequireCapability := """osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.7))"""")
+        osgiBndRequireCapability := """osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.7)(!(version>=1.8)))"""")
 })
 
 crossScalaVersions := Seq("2.11.2")

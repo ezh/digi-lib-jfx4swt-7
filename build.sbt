@@ -43,12 +43,13 @@ inConfig(OSGiConf)({
         osgiBndExportPackage := List("org.digimead.digi.lib.*"),
         osgiBndImportPackage := List("!org.aspectj.*", "*"),
         osgiBndPrivatePackage := List(),
-        osgiBndBundleFragmentHost := "org.digimead.lib.swt4jfx")
+        osgiBndBundleFragmentHost := "org.digimead.lib.swt4jfx",
+        osgiBndRequireCapability := """osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.7))"""")
 })
 
-crossScalaVersions := Seq("2.11.1")
+crossScalaVersions := Seq("2.11.2")
 
-scalaVersion := "2.11.1"
+scalaVersion := "2.11.2"
 
 scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-unchecked", "-Xcheckinit", "-feature", "-Xelide-below", "ALL")
 
@@ -84,7 +85,7 @@ libraryDependencies ++= {
   Seq(
     "org.eclipse.swt" % artifact % "4.2.1" % "compileonly",
     "org.eclipse.swt" % artifact % "4.2.1" % "test",
-    "org.digimead" %% "digi-lib-jfx4swt" % "0.1.0.1-SNAPSHOT",
+    "org.digimead" %% "digi-lib-jfx4swt" % "0.1.0.2-SNAPSHOT",
     "org.digimead" %% "digi-lib-test" % "0.3.0.0-SNAPSHOT" % "test"
   )
 }

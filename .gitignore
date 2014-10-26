@@ -1,0 +1,89 @@
+*.class
+*.iml
+*.ipr
+*.iws
+*.svn*
+*/.idea/*
+*ErrorLogs/
+*RecentChanges/
+.cache
+.classpath
+.gitignore
+.java*
+.idea
+.manager
+.project
+.scala_dependencies
+.settings
+.svnignore
+/lib/
+/log_errors.log
+/log_info.log
+/test/
+bin/
+bin/*
+build.properties
+build/
+classes-extra/*
+classes-hotfix/*
+classes-tests/*
+classes/*
+data/*
+gen/*
+infinitest.settings
+junit*
+lift/*
+out/*
+project-dev/*
+project/boot/
+project/lib_managed/
+project/project/target/*
+project/target/*
+specs/bin/*
+specs/saved reports/*
+target*
+target/*
+_*
+
+# use glob syntax.
+syntax: glob
+*.ser
+*.class
+*~
+*.bak
+#*.off
+*.old
+*.lib
+
+# eclipse conf file
+.settings
+.classpath
+.project
+.manager
+.scala_dependencies
+
+# idea
+.idea
+*.iml
+
+# building
+target
+build
+null
+tmp*
+temp*
+dist
+test-output
+build.log
+
+# other scm
+.svn
+.CVS
+.hg*
+
+# switch to regexp syntax.
+#  syntax: regexp
+#  ^\.pc/
+
+#SHITTY output not in target directory
+build.log

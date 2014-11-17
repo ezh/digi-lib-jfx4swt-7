@@ -7,4 +7,4 @@ resolvers ++= Seq(
 
 addSbtPlugin("org.digimead" % "sbt-application" % "0.2.0.0")
 
-addSbtPlugin("org.digimead" % "sbt-osgi-manager" % "0.2.3.0")
+addSbtPlugin("org.digimead" % "sbt-osgi-manager" % "0.3.0.1-SNAPSHOT")

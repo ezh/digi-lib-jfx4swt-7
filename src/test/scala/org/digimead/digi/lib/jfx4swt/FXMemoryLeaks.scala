@@ -104,6 +104,7 @@ class FXMemoryLeaks extends FreeSpec with Matchers with LoggingHelper {
           }
           println("Show shell with " + canvas.adapter.get.hashCode())
           val adapter = JFX.exec {
+            canvas.initializeJFX()
             val chart = createChart()
             chart.setAnimated(true)
             val fadeTransition = FadeTransitionBuilder.create()

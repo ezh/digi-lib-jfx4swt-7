@@ -75,6 +75,7 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
           }
           canvas.setBackground(Display.getDefault().getSystemColor(SWT.COLOR_WHITE))
           val adapter = JFX.exec {
+            canvas.initializeJFX()
             val chart = createChart()
             chart.setAnimated(true)
             val fadeTransition = FadeTransitionBuilder.create()
@@ -145,6 +146,7 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
             }
           }*/
           val adapter = JFX.exec {
+            canvas.initializeJFX()
             val chart = createChart()
             chart.setAnimated(false)
             val scene = new Scene(chart, 500, 500)
@@ -205,6 +207,7 @@ class FXCanvasSpec extends FreeSpec with Matchers with LoggingHelper {
             }
           }
           val adapter = JFX.exec {
+            canvas.initializeJFX()
             val text = <>[TextBuilder[_], Text](TextBuilder.create()) { b ⇒
               b.text("1234")
               b.font(Font.font(null, FontWeight.BOLD, 100))

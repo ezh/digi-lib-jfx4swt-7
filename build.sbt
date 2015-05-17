@@ -36,7 +36,7 @@ version <<= (baseDirectory) { (b) => scala.io.Source.fromFile(b / "version").mkS
 
 inConfig(OSGiConf)({
   import OSGiKey._
-  Seq[Project.Setting[_]](
+  Seq(
         osgiBndBundleSymbolicName := "org.digimead.lib.swt4jfx.7",
         osgiBndBundleCopyright := "Copyright © 2014-2015 Alexey B. Aksenov/Ezh. All rights reserved.",
         osgiBndBundleLicense := "http://www.gnu.org/licenses/lgpl-3.0.txt;description=GNU Lesser General Public License, Version 3.0",
@@ -47,9 +47,9 @@ inConfig(OSGiConf)({
         osgiBndRequireCapability := """osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=1.7)(!(version>=1.8)))"""")
 })
 
-crossScalaVersions := Seq("2.11.5")
+crossScalaVersions := Seq("2.11.6")
 
-scalaVersion := "2.11.5"
+scalaVersion := "2.11.6"
 
 scalacOptions ++= Seq("-encoding", "UTF-8", "-deprecation", "-unchecked", "-Xcheckinit", "-feature", "-Xelide-below", "ALL")
 
@@ -82,8 +82,8 @@ libraryDependencies ++= {
   Seq(
     "org.eclipse.swt" % artifact % "4.2.1" % "compileonly",
     "org.eclipse.swt" % artifact % "4.2.1" % "test",
-    "org.digimead" %% "digi-lib-jfx4swt" % "0.1.0.7",
-    "org.digimead" %% "digi-lib-test" % "0.3.0.2" % "test"
+    "org.digimead" %% "digi-lib-jfx4swt" % "0.1.0.8",
+    "org.digimead" %% "digi-lib-test" % "0.3.0.3" % "test"
   )
 }
 
@@ -98,7 +98,7 @@ testGrouping in Test <<= (definedTests in Test) map { tests =>
     new Tests.Group(
       name = test.name,
       tests = Seq(test),
-      runPolicy = Tests.SubProcess(javaOptions = Seq.empty[String]))
+      runPolicy = Tests.SubProcess(ForkOptions(runJVMOptions = Seq.empty[String])))
   }
 }
 
